@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+.env.local
+data/
+*.egg-info/
+.cursor/
+frontend/
+website_docs.md
+ARCHITECTURE.md
