@@ -119,10 +119,7 @@ export default function Home() {
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
-      <header className="mb-10 text-center">
-        <h1 className="text-4xl font-bold tracking-tight mb-2">
-          <span className="text-[var(--accent)]">NEO</span> Target Planner
-        </h1>
+      <header className="mb-8 text-center">
         <p className="text-[var(--text-secondary)] text-lg max-w-2xl mx-auto">
           Find tonight&apos;s observable Near-Earth Objects for your telescope.
           Enter your location and specs below.
