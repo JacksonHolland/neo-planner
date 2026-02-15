@@ -13,6 +13,7 @@ const sections = [
   { id: "api-all", label: "GET /targets/all" },
   { id: "api-detail", label: "GET /targets/{designation}" },
   { id: "api-export", label: "GET /targets/export" },
+  { id: "api-finder", label: "GET /targets/{desig}/finder" },
   { id: "api-sources", label: "GET /sources/neocp" },
   { id: "api-health", label: "GET /health" },
   { id: "response-schema", label: "Response Schema" },
@@ -122,6 +123,21 @@ export default function DocsPage() {
             <Code>https://ssd-api.jpl.nasa.gov/scout.api</Code>
           </p>
 
+          <h4 className="font-semibold mt-4 mb-1">JPL Sentry</h4>
+          <p>
+            <a href="https://cneos.jpl.nasa.gov/sentry/" target="_blank" className="text-[var(--accent)] hover:underline">
+              Sentry
+            </a>{" "}
+            tracks ~2,000 objects with non-zero Earth impact probability. We
+            cross-reference NEOCP targets against the Sentry risk list. If a
+            match is found, the target&apos;s <Code>impact_prob</Code> field is
+            populated with the cumulative impact probability.
+          </p>
+          <p className="mt-2">
+            Endpoint:{" "}
+            <Code>https://ssd-api.jpl.nasa.gov/sentry.api</Code>
+          </p>
+
           <h4 className="font-semibold mt-4 mb-1">Refresh cycle</h4>
           <p>
             On startup, the API fetches from both sources and merges the results.
@@ -224,6 +240,12 @@ export default function DocsPage() {
               ["Last Observed", "Days since the most recent observation. Objects not seen for several days are more urgent — they may be lost if not observed soon."],
               ["NEO Confidence", "JPL Scout's estimate (0–100%) that this object is a real near-Earth object rather than a main-belt asteroid or artifact."],
               ["PHA Score", "JPL Scout's assessment of whether the object could be a Potentially Hazardous Asteroid (close approach + large size). Higher = more potentially hazardous."],
+              ["Impact Probability", "From JPL Sentry — the cumulative probability of Earth impact across all potential future close approaches. Only shown for objects on the Sentry risk list (~2,000 known objects). Displayed in scientific notation (e.g., 2.6e-07)."],
+              ["Motion Rate", "How fast the object is moving across the sky, in arcseconds per minute. Sourced from JPL Scout. Important for exposure planning — fast-moving objects will trail in long exposures."],
+              ["Motion Direction", "The position angle (PA) of the object's motion, measured in degrees from north through east. Also shown as a cardinal direction (N, NE, E, etc.)."],
+              ["Max Exposure", "A rough estimate of the longest exposure you can take without the object trailing, assuming a plate scale of 2\"/pixel. Formula: (2 arcsec/pixel) / (rate arcsec/min) × 60 seconds."],
+              ["Predicted Position", "If available from JPL Horizons, the predicted RA/Dec at the transit time. More accurate than the NEOCP position for fast-moving objects. Falls back to NEOCP position for objects not yet in Horizons."],
+              ["Finder Chart", "An SVG star chart showing the target's position relative to nearby catalog stars. 15' field of view, N up, E left (standard astronomical orientation). Target is marked with crosshairs."],
             ]}
           />
         </Section>
@@ -346,6 +368,19 @@ export default function DocsPage() {
             ["limit", "int", "200", "Maximum targets"],
           ]}
           example={`curl "https://neo-planner-production.up.railway.app/targets/export?format=mpc80&lat=42.6&lon=-71.5&limiting_mag=19.5"`}
+        />
+
+        <Endpoint
+          id="api-finder"
+          method="GET"
+          path="/targets/{designation}/finder"
+          description="Generates an SVG finder chart showing the target's position relative to nearby catalog stars. Returns image/svg+xml content."
+          params={[
+            ["designation", "string (path)", "required", "Target designation"],
+            ["fov", "float", "15", "Field of view in arcminutes"],
+            ["mag_limit", "float", "15", "Faintest catalog stars to include"],
+          ]}
+          example={`curl "https://neo-planner-production.up.railway.app/targets/C45UKP1/finder?fov=15" -o finder.svg`}
         />
 
         <Endpoint

@@ -45,6 +45,14 @@ class Target:
     moon_sep_deg: Optional[float] = None
     transit_time: Optional[datetime] = None
 
+    # ── Ephemeris (filled by ephemeris engine) ─────────────────────────
+    predicted_ra_deg: Optional[float] = None
+    predicted_dec_deg: Optional[float] = None
+    predicted_epoch: Optional[datetime] = None
+    motion_rate_arcsec_min: Optional[float] = None
+    motion_pa_deg: Optional[float] = None
+    predicted_mag: Optional[float] = None
+
     # ── Priority (filled by scorer) ───────────────────────────────────
     priority_score: Optional[float] = None
 
@@ -77,6 +85,7 @@ class Target:
         for attr in (
             "neo_score", "pha_score", "impact_prob",
             "mag_v", "mag_h", "n_obs", "arc_days", "not_seen_days",
+            "motion_rate_arcsec_min", "motion_pa_deg",
         ):
             other_val = getattr(other, attr, None)
             if other_val is not None and getattr(self, attr, None) is None:

@@ -27,6 +27,7 @@ from api.routers import targets, sources
 from core.target import Target
 from sources.neocp import NEOCPAdapter
 from sources.scout import enrich_targets
+from sources.sentry import enrich_with_sentry
 
 # ── In-memory target cache ────────────────────────────────────────────
 _target_cache: Dict[str, Any] = {
@@ -42,6 +43,7 @@ def _refresh_targets() -> None:
     adapter = NEOCPAdapter()
     raw = adapter.fetch()
     enriched = enrich_targets(raw)
+    enriched = enrich_with_sentry(enriched)
 
     _target_cache["targets"] = enriched
     _target_cache["last_refresh"] = datetime.now(timezone.utc).isoformat()

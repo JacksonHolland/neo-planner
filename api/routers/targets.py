@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from api.models import TargetResponse, TonightResponse
+from core.ephemeris import enrich_ephemeris
 from core.observability import filter_observable
 from core.scorer import score_targets
 from core.target import Target
@@ -84,6 +85,9 @@ def tonight(
 
     observable = filter_observable(targets, profile)
     ranked = score_targets(observable, profile)
+
+    # Enrich with ephemeris (predicted positions at observation time)
+    enrich_ephemeris(ranked[:limit], profile)
 
     return TonightResponse(
         total=len(ranked),
@@ -162,6 +166,46 @@ def export_targets(
                         headers={"Content-Disposition": "attachment; filename=neo_targets.xml"})
     else:
         raise HTTPException(status_code=400, detail=f"Unknown format: {format}")
+
+
+# ── GET /targets/{designation}/finder ─────────────────────────────────
+
+@router.get("/{designation}/finder")
+def target_finder(
+    designation: str,
+    fov: float = Query(15, description="Field of view in arcminutes"),
+    mag_limit: float = Query(15, description="Star magnitude limit"),
+):
+    """Generate an SVG finder chart for a target."""
+    from core.finder import generate_finder_svg
+
+    cache = _get_cache()
+    match = None
+    for t in cache["targets"]:
+        if t.designation == designation:
+            match = t
+            break
+
+    if match is None:
+        raise HTTPException(status_code=404, detail=f"Target not found: {designation}")
+
+    ra = match.predicted_ra_deg if match.predicted_ra_deg is not None else match.ra_deg
+    dec = match.predicted_dec_deg if match.predicted_dec_deg is not None else match.dec_deg
+
+    if ra is None or dec is None:
+        raise HTTPException(status_code=400, detail="Target has no position data")
+
+    try:
+        svg = generate_finder_svg(
+            ra_deg=ra,
+            dec_deg=dec,
+            fov_arcmin=fov,
+            star_mag_limit=mag_limit,
+            designation=designation,
+        )
+        return Response(content=svg, media_type="image/svg+xml")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Finder chart generation failed: {exc}")
 
 
 # ── GET /targets/{designation} ────────────────────────────────────────

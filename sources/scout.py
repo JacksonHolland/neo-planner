@@ -99,6 +99,15 @@ class ScoutAdapter(SourceAdapter):
             except (ValueError, TypeError):
                 pass
 
+        # Motion rate — Scout provides rate in arcsec/min (string)
+        motion_rate = None
+        rate_raw = entry.get("rate")
+        if rate_raw is not None:
+            try:
+                motion_rate = float(rate_raw)
+            except (ValueError, TypeError):
+                pass
+
         return Target(
             designation=desig,
             source="scout",
@@ -112,6 +121,7 @@ class ScoutAdapter(SourceAdapter):
             arc_days=float(entry.get("arc", 0)),
             neo_score=_safe_float("neoScore"),
             pha_score=_safe_float("phaScore"),
+            motion_rate_arcsec_min=motion_rate,
             updated_at=now,
             raw=entry,
         )

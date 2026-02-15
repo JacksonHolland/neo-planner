@@ -31,6 +31,12 @@ class TargetResponse(BaseModel):
     neo_score: Optional[float] = None
     pha_score: Optional[float] = None
     impact_prob: Optional[float] = None
+    predicted_ra_deg: Optional[float] = None
+    predicted_dec_deg: Optional[float] = None
+    predicted_epoch: Optional[str] = None
+    motion_rate_arcsec_min: Optional[float] = None
+    motion_pa_deg: Optional[float] = None
+    predicted_mag: Optional[float] = None
     observable: Optional[bool] = None
     obs_window_start: Optional[str] = None
     obs_window_end: Optional[str] = None
