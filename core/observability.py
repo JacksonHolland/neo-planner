@@ -73,32 +73,49 @@ def compute_observability(
         target.observable = False
         return target
 
-    # Compute target altitude across the night
+    # Compute target altitude and azimuth across the night
     target_coord = SkyCoord(ra=target.ra_deg * u.deg, dec=target.dec_deg * u.deg)
     altaz_frame = AltAz(obstime=times, location=location)
     target_altaz = target_coord.transform_to(altaz_frame)
     altitudes = target_altaz.alt.deg  # numpy array
+    azimuths = target_altaz.az.deg    # numpy array
 
-    # Moon position (for separation check)
-    moon_coord = get_body("moon", times[len(times) // 2], location)
-    moon_sep = target_coord.separation(moon_coord).deg
+    # Hour angle: HA = LST - RA
+    lst_hours = times.sidereal_time("apparent", profile.lon * u.deg).hour  # numpy array
+    ra_hours = target.ra_deg / 15.0
+    ha_hours = lst_hours - ra_hours
+    # Wrap to [-12, 12)
+    ha_hours = ((ha_hours + 12) % 24) - 12
 
-    # Find observable window (altitude > min AND moon far enough)
+    # Moon position at every timestep (for per-step separation check)
+    moon_coords = get_body("moon", times, location)
+    moon_seps = target_coord.separation(moon_coords).deg
+
+    # Build constraint masks
     above = altitudes >= profile.min_altitude_deg
-    moon_ok = moon_sep >= profile.min_moon_sep_deg
+    moon_ok = moon_seps >= profile.min_moon_sep_deg
+    ha_ok = (ha_hours >= profile.min_ha_hours) & (ha_hours <= profile.max_ha_hours)
 
-    if not above.any() or not moon_ok:
+    import numpy as np
+    if profile.min_az_deg == 0.0 and profile.max_az_deg == 360.0:
+        az_ok = np.ones_like(above, dtype=bool)
+    elif profile.min_az_deg <= profile.max_az_deg:
+        az_ok = (azimuths >= profile.min_az_deg) & (azimuths <= profile.max_az_deg)
+    else:
+        az_ok = (azimuths >= profile.min_az_deg) | (azimuths <= profile.max_az_deg)
+
+    obs_mask = above & ha_ok & az_ok & moon_ok
+
+    if not obs_mask.any():
         target.observable = False
-        target.moon_sep_deg = round(float(moon_sep), 1)
+        target.moon_sep_deg = round(float(moon_seps.min()), 1)
         return target
 
-    # Observable indices
-    obs_mask = above  # moon_ok is scalar, already checked
     obs_indices = [i for i, v in enumerate(obs_mask) if v]
 
     if not obs_indices:
         target.observable = False
-        target.moon_sep_deg = round(float(moon_sep), 1)
+        target.moon_sep_deg = round(float(moon_seps.min()), 1)
         return target
 
     window_start_t = times[obs_indices[0]]
@@ -108,6 +125,8 @@ def compute_observability(
     best_idx = int(altitudes[obs_mask].argmax())
     best_alt = float(altitudes[obs_indices[best_idx]])
     best_airmass = _airmass(best_alt)
+    best_az = float(azimuths[obs_indices[best_idx]])
+    best_ha = float(ha_hours[obs_indices[best_idx]])
 
     # Transit (highest point)
     transit_idx = int(altitudes.argmax())
@@ -119,7 +138,9 @@ def compute_observability(
     target.obs_window_hours = round(window_hours, 2)
     target.best_altitude_deg = round(best_alt, 1)
     target.best_airmass = round(best_airmass, 2)
-    target.moon_sep_deg = round(float(moon_sep), 1)
+    target.best_az_deg = round(best_az, 1)
+    target.best_ha_hours = round(best_ha, 2)
+    target.moon_sep_deg = round(float(moon_seps[obs_mask].min()), 1)
     target.transit_time = transit_t.to_datetime(timezone=timezone.utc)
 
     return target

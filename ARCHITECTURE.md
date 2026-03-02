@@ -170,15 +170,15 @@ what to observe tonight.
 ```json
 {
   "name": "Wallace Astrophysical Observatory",
-  "code": "244",
-  "lat": 42.6138,
-  "lon": -71.4889,
+  "code": null,
+  "lat": 42.6097,
+  "lon": -71.4844,
   "alt_m": 180,
   "aperture_m": 0.6,
   "limiting_mag": 19.5,
   "fov_arcmin": 20,
   "min_altitude_deg": 20,
-  "max_sun_alt_deg": -12,
+  "max_sun_alt_deg": -18,
   "min_moon_sep_deg": 30
 }
 ```
@@ -368,6 +368,72 @@ Vercel frontend. Sky map, target list, observable window visualization.
 ### Phase 8 — Broker integration
 Add Fink, ANTARES, ALeRCE adapters for real-time Rubin/ZTF alerts.
 These are additive — the rest of the platform doesn't change.
+
+---
+
+## Known Limitations
+
+Issues identified during audit that should be addressed in future work.
+
+### 1. Dark window scan clips observability at extreme longitudes
+
+**File:** `core/observability.py`, `_dark_window()`
+
+**What it affects:** Observers west of ~UTC-7 (Pacific US, Hawaii, East Asia, Australia) may have their observable window truncated by 1-2+ hours.
+
+**Details:** The dark window scan is anchored at 12:00 UTC and runs for exactly 24 hours (96 steps x 15 min). For observers whose astronomical darkness extends past ~11:45 UTC the following day (western longitudes) or begins before 12:00 UTC (far-eastern longitudes), the scan misses part of the night. For example, a Pacific US observer in March loses ~1.25 hours of late-night darkness; a Japanese observer loses ~2.5 hours of early-evening darkness.
+
+**Fix:** Offset the scan start by the observer's longitude to center on their local midnight. For example: `base_utc_hour = 12 - (profile.lon / 15)`, then scan 30 hours forward to guarantee full coverage regardless of timezone and season.
+
+### 2. Ephemeris queries fail silently for most NEOCP candidates
+
+**File:** `core/ephemeris.py`
+
+**What it affects:** Predicted positions, motion rates, and position angles are unavailable for most targets. Finder charts lack motion vectors. The trailing filter is bypassed (targets pass through unfiltered).
+
+**Details:** NEOCP candidates carry temporary designations (e.g., "ZTF10Bb") that JPL Horizons typically does not recognize until the object receives enough observations for a formal designation. The code correctly falls back to the NEOCP-provided RA/Dec, but this is a snapshot position that is not propagated forward to the observation time. For fast-moving NEOs (several arcmin/min), the position can drift significantly between the NEOCP epoch and the actual observation.
+
+**Fix:** Use the Scout API's ephemeris endpoint (`?tdes=DESIG&eph-start=...`) which can compute ephemerides for NEOCP candidates that Horizons cannot. Alternatively, integrate Find_Orb for local orbit determination once sufficient astrometry is available.
+
+### 3. Sentry enrichment rarely matches NEOCP targets
+
+**File:** `sources/sentry.py`, `enrich_with_sentry()`
+
+**What it affects:** The `impact_prob` field remains null for virtually all NEOCP targets, so impact probability has no effect on scoring.
+
+**Details:** JPL Sentry tracks ~2,000 objects with non-zero Earth impact probability, but uses permanent/provisional designations (e.g., "2024 YR4"). NEOCP candidates use temporary designations (e.g., "P11yMaG"). The designation-based matching in `enrich_with_sentry()` almost never finds a match. This is a fundamental namespace mismatch, not a code bug.
+
+**Fix:** Add a positional cross-match (cone search) as a fallback when designation matching fails. A radius of ~1 arcmin should catch most cases while avoiding false positives.
+
+### 4. Finder chart cache grows without bound
+
+**File:** `core/finder.py`
+
+**What it affects:** Memory usage on long-running server instances grows monotonically as unique finder charts are generated.
+
+**Details:** The module-level `_finder_cache` dict stores every SVG ever generated and never evicts entries. On a server running for days or weeks, this is a slow memory leak.
+
+**Fix:** Replace the plain dict with `functools.lru_cache` or a bounded dict (e.g., `collections.OrderedDict` with a max size) to cap memory usage.
+
+### 5. No thread safety on target cache
+
+**File:** `api/main.py`
+
+**What it affects:** Under heavy concurrent load, a request handler could theoretically read a partially-updated cache during a background refresh.
+
+**Details:** The background polling thread writes to `_target_cache` while request handlers read from it with no lock. CPython's GIL makes this extremely unlikely to cause a crash, but it is not formally safe.
+
+**Fix:** Use `threading.Lock` around cache reads and writes, or swap to an atomic replacement pattern (build a new dict, then assign the reference in one operation).
+
+### 6. Pydantic v1 `__fields__` deprecation
+
+**File:** `api/routers/targets.py`, line 38
+
+**What it affects:** Will emit a deprecation warning under Pydantic v2 and will break if Pydantic v3 removes it.
+
+**Details:** `TargetResponse.__fields__` is Pydantic v1 syntax. The v2 equivalent is `TargetResponse.model_fields`.
+
+**Fix:** Replace `__fields__` with `model_fields` when upgrading to Pydantic v2+.
 
 ---
 

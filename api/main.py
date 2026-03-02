@@ -53,11 +53,11 @@ def _refresh_targets() -> None:
 def _poll_loop() -> None:
     """Background thread that refreshes sources periodically."""
     while True:
+        time.sleep(NEOCP_POLL_SECONDS)
         try:
             _refresh_targets()
         except Exception as exc:
             print(f"[refresh] error: {exc}")
-        time.sleep(NEOCP_POLL_SECONDS)
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────

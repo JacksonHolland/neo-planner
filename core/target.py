@@ -42,6 +42,8 @@ class Target:
     obs_window_hours: Optional[float] = None
     best_altitude_deg: Optional[float] = None
     best_airmass: Optional[float] = None
+    best_az_deg: Optional[float] = None
+    best_ha_hours: Optional[float] = None
     moon_sep_deg: Optional[float] = None
     transit_time: Optional[datetime] = None
 
@@ -52,6 +54,9 @@ class Target:
     motion_rate_arcsec_min: Optional[float] = None
     motion_pa_deg: Optional[float] = None
     predicted_mag: Optional[float] = None
+
+    # ── Streaking (filled post-ephemeris) ──────────────────────────────
+    max_exposure_sec: Optional[float] = None
 
     # ── Priority (filled by scorer) ───────────────────────────────────
     priority_score: Optional[float] = None
@@ -84,11 +89,16 @@ class Target:
         """
         for attr in (
             "neo_score", "pha_score", "impact_prob",
-            "mag_v", "mag_h", "n_obs", "arc_days", "not_seen_days",
+            "mag_v", "mag_h",
             "motion_rate_arcsec_min", "motion_pa_deg",
         ):
             other_val = getattr(other, attr, None)
             if other_val is not None and getattr(self, attr, None) is None:
+                setattr(self, attr, other_val)
+
+        for attr in ("n_obs", "arc_days", "not_seen_days"):
+            other_val = getattr(other, attr, None)
+            if other_val and not getattr(self, attr, None):
                 setattr(self, attr, other_val)
 
         # Always take the richer raw payload

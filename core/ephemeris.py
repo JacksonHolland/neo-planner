@@ -33,7 +33,11 @@ def compute_ephemeris(target: Target, profile: TelescopeProfile) -> Target:
         # the designation as a "smallbody" search with DES= prefix
         obj = Horizons(
             id=target.designation,
-            location=f"{profile.lon},{profile.lat},{profile.alt_m / 1000.0}",
+            location={
+                'lon': profile.lon,
+                'lat': profile.lat,
+                'elevation': profile.alt_m / 1000.0,
+            },
             epochs=query_time.jd if hasattr(query_time, "jd") else _to_jd(query_time),
             id_type="smallbody",
         )

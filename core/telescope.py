@@ -23,11 +23,18 @@ class TelescopeProfile:
     aperture_m: float = 0.2         # primary mirror / lens diameter (metres)
     limiting_mag: float = 18.0      # faintest detectable magnitude
     fov_arcmin: float = 30.0        # field of view diameter (arcminutes)
+    plate_scale_arcsec: float = 2.0 # plate scale (arcsec per pixel)
+    seeing_arcsec: float = 2.5      # typical seeing FWHM (arcsec)
+    max_trail_arcsec: float = 2.5   # max acceptable trail length (arcsec)
 
     # ── Observing constraints ─────────────────────────────────────────
     min_altitude_deg: float = 20.0  # minimum target altitude above horizon
-    max_sun_alt_deg: float = -12.0  # sun must be below this for "dark"
+    max_sun_alt_deg: float = -18.0  # sun must be below this for "dark"
     min_moon_sep_deg: float = 30.0  # minimum angular distance from Moon
+    min_ha_hours: float = -6.0      # western hour-angle limit (hours)
+    max_ha_hours: float = 6.0       # eastern hour-angle limit (hours)
+    min_az_deg: float = 0.0         # minimum azimuth (0 = no constraint)
+    max_az_deg: float = 360.0       # maximum azimuth (360 = no constraint)
 
     # ── Scoring weights (user-tunable) ────────────────────────────────
     score_weights: Dict[str, float] = field(default_factory=lambda: {
@@ -54,15 +61,15 @@ class TelescopeProfile:
 
 WALLACE = TelescopeProfile(
     name="Wallace Astrophysical Observatory",
-    code="244",
-    lat=42.6138,
-    lon=-71.4889,
+    code=None,
+    lat=42.6097,
+    lon=-71.4844,
     alt_m=180,
     aperture_m=0.6,
     limiting_mag=19.5,
     fov_arcmin=20,
     min_altitude_deg=20,
-    max_sun_alt_deg=-12,
+    max_sun_alt_deg=-18,
     min_moon_sep_deg=30,
 )
 
