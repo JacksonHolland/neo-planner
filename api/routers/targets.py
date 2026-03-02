@@ -71,20 +71,15 @@ def _build_profile(
     )
 
 
-def _apply_trailing_filter(
+def _compute_trailing(
     targets: List[Target],
     profile: TelescopeProfile,
-) -> List[Target]:
-    """Compute max exposure from trailing constraint; drop targets with < 1s max exposure."""
-    result = []
+) -> None:
+    """Compute max exposure before trailing exceeds the configured limit."""
     for t in targets:
         if t.motion_rate_arcsec_min and t.motion_rate_arcsec_min > 0:
             rate_per_sec = t.motion_rate_arcsec_min / 60.0
             t.max_exposure_sec = round(profile.max_trail_arcsec / rate_per_sec, 1)
-            if t.max_exposure_sec < 1.0:
-                continue
-        result.append(t)
-    return result
 
 
 # ── GET /targets/tonight ─────────────────────────────────────────────
@@ -128,13 +123,13 @@ def tonight(
     # Enrich with ephemeris (predicted positions at observation time)
     enrich_ephemeris(ranked[:limit], profile)
 
-    # Compute max exposure and filter out unimaginable targets
-    ranked_filtered = _apply_trailing_filter(ranked[:limit], profile)
+    # Compute max exposure before trailing
+    _compute_trailing(ranked[:limit], profile)
 
     return TonightResponse(
-        total=len(ranked_filtered),
+        total=len(ranked[:limit]),
         telescope=profile.to_dict(),
-        targets=[_target_to_response(t) for t in ranked_filtered],
+        targets=[_target_to_response(t) for t in ranked[:limit]],
     )
 
 
