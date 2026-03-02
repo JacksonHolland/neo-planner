@@ -321,7 +321,7 @@ function TargetCard({ target: t, isExpanded, onToggle }: { target: Target; isExp
                     <div className="text-xs text-[var(--text-secondary)]">{t.dec_deg != null ? `${t.dec_deg.toFixed(5)}°` : ""}</div>
                   </div>
                 </div>
-                {t.predicted_ra_deg != null && t.predicted_dec_deg != null && (
+                {t.predicted_ra_deg != null && t.predicted_dec_deg != null ? (
                   <div className="bg-[var(--bg-secondary)] rounded-lg p-3 mt-2">
                     <div className="text-xs text-[var(--accent)] font-semibold mb-2">
                       Predicted Position (at observation time)
@@ -335,6 +335,21 @@ function TargetCard({ target: t, isExpanded, onToggle }: { target: Target; isExp
                         <div className="font-mono">{degToDMS(t.predicted_dec_deg)}</div>
                         <div className="text-xs text-[var(--text-secondary)]">{t.predicted_dec_deg.toFixed(5)}°</div>
                       </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 mt-2">
+                    <div className="text-xs text-amber-400 font-semibold mb-1">
+                      Ephemeris unavailable
+                    </div>
+                    <div className="text-xs text-amber-300/70">
+                      This object is not yet in JPL Horizons. The position shown is from NEOCP
+                      and may be stale for fast-moving objects. Use caution when pointing &mdash;
+                      check the object&apos;s current position on the{" "}
+                      <a href={`https://www.minorplanetcenter.net/iau/NEO/toconfirm_tabular.html`}
+                        target="_blank" className="underline hover:text-amber-200">NEOCP page</a> or{" "}
+                      <a href={`https://cneos.jpl.nasa.gov/scout/#/object/${t.designation}`}
+                        target="_blank" className="underline hover:text-amber-200">Scout</a> before observing.
                     </div>
                   </div>
                 )}
