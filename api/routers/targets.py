@@ -46,6 +46,13 @@ def _build_profile(
     limiting_mag: float = 18.0,
     min_altitude_deg: float = 20.0,
     min_moon_sep_deg: float = 30.0,
+    min_ha_hours: float = -6.0,
+    max_ha_hours: float = 6.0,
+    min_az_deg: float = 0.0,
+    max_az_deg: float = 360.0,
+    plate_scale_arcsec: float = 2.0,
+    seeing_arcsec: float = 2.5,
+    max_trail_arcsec: float = 2.5,
 ) -> TelescopeProfile:
     return TelescopeProfile(
         lat=lat,
@@ -54,7 +61,30 @@ def _build_profile(
         limiting_mag=limiting_mag,
         min_altitude_deg=min_altitude_deg,
         min_moon_sep_deg=min_moon_sep_deg,
+        min_ha_hours=min_ha_hours,
+        max_ha_hours=max_ha_hours,
+        min_az_deg=min_az_deg,
+        max_az_deg=max_az_deg,
+        plate_scale_arcsec=plate_scale_arcsec,
+        seeing_arcsec=seeing_arcsec,
+        max_trail_arcsec=max_trail_arcsec,
     )
+
+
+def _apply_trailing_filter(
+    targets: List[Target],
+    profile: TelescopeProfile,
+) -> List[Target]:
+    """Compute max exposure from trailing constraint; drop targets with < 1s max exposure."""
+    result = []
+    for t in targets:
+        if t.motion_rate_arcsec_min and t.motion_rate_arcsec_min > 0:
+            rate_per_sec = t.motion_rate_arcsec_min / 60.0
+            t.max_exposure_sec = round(profile.max_trail_arcsec / rate_per_sec, 1)
+            if t.max_exposure_sec < 1.0:
+                continue
+        result.append(t)
+    return result
 
 
 # ── GET /targets/tonight ─────────────────────────────────────────────
@@ -67,6 +97,13 @@ def tonight(
     limiting_mag: float = Query(18.0, description="Faintest magnitude"),
     min_altitude_deg: float = Query(20.0, description="Min target altitude"),
     min_moon_sep_deg: float = Query(30.0, description="Min Moon separation"),
+    min_ha_hours: float = Query(-6.0, description="Western HA limit (hours)"),
+    max_ha_hours: float = Query(6.0, description="Eastern HA limit (hours)"),
+    min_az_deg: float = Query(0.0, description="Min azimuth (degrees)"),
+    max_az_deg: float = Query(360.0, description="Max azimuth (degrees)"),
+    plate_scale_arcsec: float = Query(2.0, description="Plate scale (arcsec/px)"),
+    seeing_arcsec: float = Query(2.5, description="Seeing FWHM (arcsec)"),
+    max_trail_arcsec: float = Query(2.5, description="Max acceptable trail (arcsec)"),
     limit: int = Query(50, ge=1, le=500),
 ):
     """
@@ -78,7 +115,9 @@ def tonight(
     if not cache["targets"]:
         raise HTTPException(status_code=503, detail="No targets loaded yet — sources still initializing")
 
-    profile = _build_profile(lat, lon, alt_m, limiting_mag, min_altitude_deg, min_moon_sep_deg)
+    profile = _build_profile(lat, lon, alt_m, limiting_mag, min_altitude_deg, min_moon_sep_deg,
+                             min_ha_hours, max_ha_hours, min_az_deg, max_az_deg,
+                             plate_scale_arcsec, seeing_arcsec, max_trail_arcsec)
 
     # Deep-copy so we don't mutate the cache
     targets = [copy.deepcopy(t) for t in cache["targets"]]
@@ -89,10 +128,13 @@ def tonight(
     # Enrich with ephemeris (predicted positions at observation time)
     enrich_ephemeris(ranked[:limit], profile)
 
+    # Compute max exposure and filter out unimaginable targets
+    ranked_filtered = _apply_trailing_filter(ranked[:limit], profile)
+
     return TonightResponse(
-        total=len(ranked),
+        total=len(ranked_filtered),
         telescope=profile.to_dict(),
-        targets=[_target_to_response(t) for t in ranked[:limit]],
+        targets=[_target_to_response(t) for t in ranked_filtered],
     )
 
 
@@ -123,6 +165,13 @@ def export_targets(
     limiting_mag: float = Query(18.0),
     min_altitude_deg: float = Query(20.0),
     min_moon_sep_deg: float = Query(30.0),
+    min_ha_hours: float = Query(-6.0),
+    max_ha_hours: float = Query(6.0),
+    min_az_deg: float = Query(0.0),
+    max_az_deg: float = Query(360.0),
+    plate_scale_arcsec: float = Query(2.0),
+    seeing_arcsec: float = Query(2.5),
+    max_trail_arcsec: float = Query(2.5),
     limit: int = Query(200, ge=1, le=5000),
 ):
     """Export tonight's targets in various formats (MPC 80-col, ADES, JSON, CSV)."""
@@ -132,7 +181,9 @@ def export_targets(
     if not cache["targets"]:
         raise HTTPException(status_code=503, detail="No targets loaded yet")
 
-    profile = _build_profile(lat, lon, alt_m, limiting_mag, min_altitude_deg, min_moon_sep_deg)
+    profile = _build_profile(lat, lon, alt_m, limiting_mag, min_altitude_deg, min_moon_sep_deg,
+                             min_ha_hours, max_ha_hours, min_az_deg, max_az_deg,
+                             plate_scale_arcsec, seeing_arcsec, max_trail_arcsec)
     targets = [copy.deepcopy(t) for t in cache["targets"]]
     observable = filter_observable(targets, profile)
     ranked = score_targets(observable, profile)[:limit]
@@ -202,6 +253,8 @@ def target_finder(
             fov_arcmin=fov,
             star_mag_limit=mag_limit,
             designation=designation,
+            motion_pa_deg=match.motion_pa_deg,
+            motion_rate_arcsec_min=match.motion_rate_arcsec_min,
         )
         return Response(content=svg, media_type="image/svg+xml")
     except Exception as exc:

@@ -15,6 +15,13 @@ class TelescopeParams(BaseModel):
     limiting_mag: float = Field(18.0, description="Faintest detectable magnitude")
     min_altitude_deg: float = Field(20.0, description="Minimum target altitude")
     min_moon_sep_deg: float = Field(30.0, description="Minimum Moon separation")
+    min_ha_hours: float = Field(-6.0, description="Western hour-angle limit (hours)")
+    max_ha_hours: float = Field(6.0, description="Eastern hour-angle limit (hours)")
+    min_az_deg: float = Field(0.0, description="Minimum azimuth (degrees)")
+    max_az_deg: float = Field(360.0, description="Maximum azimuth (degrees)")
+    plate_scale_arcsec: float = Field(2.0, description="Plate scale (arcsec/pixel)")
+    seeing_arcsec: float = Field(2.5, description="Typical seeing FWHM (arcsec)")
+    max_trail_arcsec: float = Field(2.5, description="Max acceptable trail length (arcsec)")
 
 
 class TargetResponse(BaseModel):
@@ -37,12 +44,15 @@ class TargetResponse(BaseModel):
     motion_rate_arcsec_min: Optional[float] = None
     motion_pa_deg: Optional[float] = None
     predicted_mag: Optional[float] = None
+    max_exposure_sec: Optional[float] = None
     observable: Optional[bool] = None
     obs_window_start: Optional[str] = None
     obs_window_end: Optional[str] = None
     obs_window_hours: Optional[float] = None
     best_altitude_deg: Optional[float] = None
     best_airmass: Optional[float] = None
+    best_az_deg: Optional[float] = None
+    best_ha_hours: Optional[float] = None
     moon_sep_deg: Optional[float] = None
     transit_time: Optional[str] = None
     priority_score: Optional[float] = None

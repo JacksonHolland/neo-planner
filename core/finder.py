@@ -19,14 +19,16 @@ def generate_finder_svg(
     star_mag_limit: float = 15.0,
     image_size: int = 500,
     designation: str = "",
+    motion_pa_deg: Optional[float] = None,
+    motion_rate_arcsec_min: Optional[float] = None,
 ) -> str:
     """
     Generate an SVG finder chart centered on (ra_deg, dec_deg).
 
     Queries VizieR for nearby stars and renders them as an SVG image.
-    Returns an SVG string. Results are cached by (ra, dec, fov).
+    Returns an SVG string. Results are cached by (ra, dec, fov, motion).
     """
-    cache_key = f"{ra_deg:.4f}_{dec_deg:.4f}_{fov_arcmin}"
+    cache_key = f"{ra_deg:.4f}_{dec_deg:.4f}_{fov_arcmin}_{motion_pa_deg}_{motion_rate_arcsec_min}"
     if cache_key in _finder_cache:
         return _finder_cache[cache_key]
 
@@ -34,7 +36,8 @@ def generate_finder_svg(
     stars = _query_stars(ra_deg, dec_deg, fov_arcmin / 60.0, star_mag_limit)
 
     # Render SVG
-    svg = _render_svg(ra_deg, dec_deg, fov_arcmin, stars, image_size, designation)
+    svg = _render_svg(ra_deg, dec_deg, fov_arcmin, stars, image_size, designation,
+                      motion_pa_deg, motion_rate_arcsec_min)
 
     _finder_cache[cache_key] = svg
     return svg
@@ -120,8 +123,10 @@ def _render_svg(
     stars: List[Dict],
     size: int,
     designation: str,
+    motion_pa_deg: Optional[float] = None,
+    motion_rate_arcsec_min: Optional[float] = None,
 ) -> str:
-    """Render an SVG finder chart."""
+    """Render an SVG finder chart with optional motion vector."""
     margin = 40
     plot_size = size - 2 * margin
     fov_deg = fov_arcmin / 60.0
@@ -179,6 +184,52 @@ def _render_svg(
     # Labels
     label = designation or "Target"
     lines.append(f'<text x="{cx + mk_size + 4}" y="{cy - 4}" fill="#38bdf8" font-size="11" font-family="monospace">{label}</text>')
+
+    # Motion vector arrow
+    if motion_pa_deg is not None and motion_rate_arcsec_min is not None and motion_rate_arcsec_min > 0:
+        # Show where the object will be in 10 minutes
+        preview_min = 10.0
+        trail_arcsec = motion_rate_arcsec_min * preview_min
+        trail_deg = trail_arcsec / 3600.0
+        # PA is measured N through E; in SVG: N is -y, E is -x
+        pa_rad = math.radians(motion_pa_deg)
+        arrow_dx = -math.sin(pa_rad) * trail_deg * scale  # E is left (-x)
+        arrow_dy = -math.cos(pa_rad) * trail_deg * scale  # N is up (-y)
+        ax = cx + arrow_dx
+        ay = cy + arrow_dy
+
+        # Clamp arrow to plot circle
+        dist = math.sqrt(arrow_dx**2 + arrow_dy**2)
+        max_arrow = r * 0.8
+        if dist > max_arrow:
+            arrow_dx *= max_arrow / dist
+            arrow_dy *= max_arrow / dist
+            ax = cx + arrow_dx
+            ay = cy + arrow_dy
+
+        # Arrow shaft
+        lines.append(
+            f'<line x1="{cx}" y1="{cy}" x2="{ax:.1f}" y2="{ay:.1f}" '
+            f'stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,3"/>'
+        )
+        # Arrowhead
+        head_len = 8
+        angle = math.atan2(arrow_dy, arrow_dx)
+        h1x = ax - head_len * math.cos(angle - 0.4)
+        h1y = ay - head_len * math.sin(angle - 0.4)
+        h2x = ax - head_len * math.cos(angle + 0.4)
+        h2y = ay - head_len * math.sin(angle + 0.4)
+        lines.append(
+            f'<polygon points="{ax:.1f},{ay:.1f} {h1x:.1f},{h1y:.1f} {h2x:.1f},{h2y:.1f}" '
+            f'fill="#f59e0b"/>'
+        )
+        # Rate label near arrowhead
+        label_x = ax + 8 * math.cos(angle + 0.5)
+        label_y = ay + 8 * math.sin(angle + 0.5)
+        lines.append(
+            f'<text x="{label_x:.1f}" y="{label_y:.1f}" fill="#f59e0b" font-size="9" '
+            f'font-family="monospace">{motion_rate_arcsec_min:.1f}&#x2033;/min</text>'
+        )
 
     # FOV label
     lines.append(f'<text x="{size - margin}" y="{size - 8}" fill="#475569" text-anchor="end" font-size="10" font-family="monospace">FOV: {fov_arcmin:.0f}\'</text>')

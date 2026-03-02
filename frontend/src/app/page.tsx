@@ -24,6 +24,8 @@ interface Target {
   obs_window_hours: number | null;
   best_altitude_deg: number | null;
   best_airmass: number | null;
+  best_az_deg: number | null;
+  best_ha_hours: number | null;
   moon_sep_deg: number | null;
   transit_time: string | null;
   predicted_ra_deg: number | null;
@@ -32,6 +34,7 @@ interface Target {
   motion_rate_arcsec_min: number | null;
   motion_pa_deg: number | null;
   predicted_mag: number | null;
+  max_exposure_sec: number | null;
   priority_score: number | null;
   source_url: string | null;
 }
@@ -87,6 +90,13 @@ export default function Home() {
   const [lon, setLon] = useState("-71.4889");
   const [limitingMag, setLimitingMag] = useState("19.5");
   const [minAlt, setMinAlt] = useState("20");
+  const [minHA, setMinHA] = useState("-6");
+  const [maxHA, setMaxHA] = useState("6");
+  const [minAz, setMinAz] = useState("0");
+  const [maxAz, setMaxAz] = useState("360");
+  const [plateScale, setPlateScale] = useState("2.0");
+  const [seeing, setSeeing] = useState("2.5");
+  const [maxTrail, setMaxTrail] = useState("2.5");
   const [results, setResults] = useState<TonightResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +112,13 @@ export default function Home() {
         lon,
         limiting_mag: limitingMag,
         min_altitude_deg: minAlt,
+        min_ha_hours: minHA,
+        max_ha_hours: maxHA,
+        min_az_deg: minAz,
+        max_az_deg: maxAz,
+        plate_scale_arcsec: plateScale,
+        seeing_arcsec: seeing,
+        max_trail_arcsec: maxTrail,
       });
       const res = await fetch(`${API_BASE}/targets/tonight?${params}`);
       if (!res.ok) {
@@ -162,6 +179,52 @@ export default function Home() {
             <label className="block text-sm text-[var(--text-secondary)] mb-1">Min Altitude (&deg;)</label>
             <input type="number" step="1" value={minAlt} onChange={(e) => setMinAlt(e.target.value)}
               className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">Min HA (hours)</label>
+            <input type="number" step="0.5" value={minHA} onChange={(e) => setMinHA(e.target.value)}
+              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">Max HA (hours)</label>
+            <input type="number" step="0.5" value={maxHA} onChange={(e) => setMaxHA(e.target.value)}
+              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">Min Az (&deg;)</label>
+            <input type="number" step="1" value={minAz} onChange={(e) => setMinAz(e.target.value)}
+              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">Max Az (&deg;)</label>
+            <input type="number" step="1" value={maxAz} onChange={(e) => setMaxAz(e.target.value)}
+              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">Plate Scale (″/px)</label>
+            <input type="number" step="0.1" min="0.1" value={plateScale} onChange={(e) => setPlateScale(e.target.value)}
+              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">Seeing FWHM (″)</label>
+            <input type="number" step="0.1" min="0.1" value={seeing} onChange={(e) => setSeeing(e.target.value)}
+              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+          <div>
+            <label className="block text-sm text-[var(--text-secondary)] mb-1">
+              Max Trail: {maxTrail}″
+            </label>
+            <input type="range" min="0.5" max="10" step="0.1" value={maxTrail}
+              onChange={(e) => setMaxTrail(e.target.value)}
+              className="w-full accent-[var(--accent)] mt-1" />
+            <div className="flex justify-between text-xs text-[var(--text-secondary)] mt-0.5">
+              <span>0.5″</span>
+              <span>10″</span>
+            </div>
           </div>
         </div>
         <div className="flex gap-3">
@@ -304,15 +367,21 @@ function TargetCard({ target: t, isExpanded, onToggle }: { target: Target; isExp
           {/* Motion */}
           {t.motion_rate_arcsec_min != null && (
             <Section title="Motion">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
-                <DetailStat label="Rate" value={`${t.motion_rate_arcsec_min.toFixed(1)} ″/min`} />
+              <div className="flex items-start gap-6">
                 {t.motion_pa_deg != null && (
-                  <DetailStat label="Direction" value={`${t.motion_pa_deg.toFixed(0)}° (${paToDirection(t.motion_pa_deg)})`} />
+                  <DirectionIndicator pa={t.motion_pa_deg} />
                 )}
-                <DetailStat
-                  label="Max Exposure (no trailing)"
-                  value={t.motion_rate_arcsec_min > 0 ? `~${Math.round(2.0 / t.motion_rate_arcsec_min * 60)}s @ 2″/px` : "—"}
-                />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 flex-1">
+                  <DetailStat label="Rate" value={`${t.motion_rate_arcsec_min.toFixed(1)} ″/min`} />
+                  {t.motion_pa_deg != null && (
+                    <DetailStat label="Direction" value={`${t.motion_pa_deg.toFixed(0)}° (${paToDirection(t.motion_pa_deg)})`} />
+                  )}
+                  <DetailStat
+                    label="Max Exposure (no trailing)"
+                    value={t.max_exposure_sec != null ? `${t.max_exposure_sec}s` : (t.motion_rate_arcsec_min > 0 ? `~${Math.round(2.0 / t.motion_rate_arcsec_min * 60)}s` : "—")}
+                    warn={t.max_exposure_sec != null && t.max_exposure_sec < 5}
+                  />
+                </div>
               </div>
             </Section>
           )}
@@ -326,6 +395,8 @@ function TargetCard({ target: t, isExpanded, onToggle }: { target: Target; isExp
               <DetailStat label="Transit Time" value={formatUTC(t.transit_time)} />
               <DetailStat label="Best Altitude" value={t.best_altitude_deg != null ? `${t.best_altitude_deg}°` : "—"} />
               <DetailStat label="Best Airmass" value={t.best_airmass?.toFixed(2) ?? "—"} />
+              <DetailStat label="Best Azimuth" value={t.best_az_deg != null ? `${t.best_az_deg}°` : "—"} />
+              <DetailStat label="Hour Angle" value={t.best_ha_hours != null ? `${t.best_ha_hours > 0 ? "+" : ""}${t.best_ha_hours.toFixed(2)}h` : "—"} />
               <DetailStat label="Moon Separation" value={t.moon_sep_deg != null ? `${t.moon_sep_deg}°` : "—"} />
             </div>
           </Section>
@@ -388,11 +459,45 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DetailStat({ label, value }: { label: string; value: string }) {
+function DetailStat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div>
       <div className="text-[var(--text-secondary)] text-xs mb-0.5">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
+      <div className={`text-sm font-medium ${warn ? "text-amber-400" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function DirectionIndicator({ pa }: { pa: number }) {
+  const r = 24;
+  const cx = 28;
+  const cy = 28;
+  const rad = (pa * Math.PI) / 180;
+  // PA measured N through E: N is up (-y), E is right (+x) in screen coords
+  const tipX = cx + r * Math.sin(rad);
+  const tipY = cy - r * Math.cos(rad);
+  const tailX = cx - (r * 0.3) * Math.sin(rad);
+  const tailY = cy + (r * 0.3) * Math.cos(rad);
+  // Arrowhead
+  const headLen = 7;
+  const angle = Math.atan2(tipY - tailY, tipX - tailX);
+  const h1x = tipX - headLen * Math.cos(angle - 0.4);
+  const h1y = tipY - headLen * Math.sin(angle - 0.4);
+  const h2x = tipX - headLen * Math.cos(angle + 0.4);
+  const h2y = tipY - headLen * Math.sin(angle + 0.4);
+
+  return (
+    <div className="flex flex-col items-center gap-1 shrink-0">
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#334155" strokeWidth="1" />
+        <text x={cx} y="8" fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">N</text>
+        <text x={cx} y="54" fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">S</text>
+        <text x="3" y={cy + 2.5} fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">E</text>
+        <text x="53" y={cy + 2.5} fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">W</text>
+        <line x1={tailX} y1={tailY} x2={tipX} y2={tipY} stroke="#f59e0b" strokeWidth="2" />
+        <polygon points={`${tipX},${tipY} ${h1x},${h1y} ${h2x},${h2y}`} fill="#f59e0b" />
+      </svg>
+      <span className="text-xs text-[var(--text-secondary)]">{pa.toFixed(0)}°</span>
     </div>
   );
 }
