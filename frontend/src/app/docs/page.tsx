@@ -160,8 +160,8 @@ export default function DocsPage() {
             We scan the Sun&apos;s altitude from your location in 15-minute steps
             across a 24-hour period. The <strong>dark window</strong> is the
             contiguous block where the Sun is below your{" "}
-            <Code>max_sun_alt</Code> threshold (default: <strong>−12°</strong>,
-            which corresponds to nautical twilight). If the Sun never goes below
+            <Code>max_sun_alt</Code> threshold (default: <strong>−18°</strong>,
+            which corresponds to astronomical twilight). If the Sun never goes below
             this threshold (e.g., polar summer), no targets are observable.
           </p>
 
@@ -190,11 +190,13 @@ export default function DocsPage() {
           <h4 className="font-semibold mt-4 mb-1">4. Moon separation</h4>
           <p>
             We compute the angular distance between the target and the Moon at
-            the midpoint of the dark window. If this is less than your{" "}
-            <Code>min_moon_sep</Code> (default: <strong>30°</strong>), the
-            target is rejected. Observing near the Moon is difficult because
-            scattered moonlight raises the sky background, making faint objects
-            harder to detect.
+            every time step across the dark window. Time steps where the
+            separation is less than your <Code>min_moon_sep</Code> (default:{" "}
+            <strong>30°</strong>) are excluded from the observable window.
+            The reported <Code>moon_sep_deg</Code> is the worst-case (minimum)
+            separation during the observable window. Observing near the Moon is
+            difficult because scattered moonlight raises the sky background,
+            making faint objects harder to detect.
           </p>
 
           <h4 className="font-semibold mt-4 mb-1">5. Brightness filter</h4>
@@ -288,13 +290,13 @@ where:
             seeing.
           </p>
 
-          <h4 className="font-semibold mt-4 mb-1">Filtering</h4>
+          <h4 className="font-semibold mt-4 mb-1">No automatic filtering</h4>
           <p>
-            Targets whose computed <Code>max_exposure_sec</Code> falls below 1
-            second are automatically removed from the results, as they are
-            effectively too fast to image with a standard CCD exposure. This
-            threshold is conservative — most telescope control systems cannot
-            reliably execute sub-second exposures.
+            The <Code>max_exposure_sec</Code> value is purely informational.
+            No targets are removed based on motion rate &mdash; professional
+            observers may intentionally use short exposures, track at sidereal
+            rate and measure trails, or use non-sidereal tracking. The value
+            is displayed so observers can plan their exposure strategy.
           </p>
 
           <h4 className="font-semibold mt-4 mb-1">References</h4>
@@ -355,7 +357,7 @@ where:
               ["Impact Probability", "From JPL Sentry — the cumulative probability of Earth impact across all potential future close approaches. Only shown for objects on the Sentry risk list (~2,000 known objects). Displayed in scientific notation (e.g., 2.6e-07)."],
               ["Motion Rate", "How fast the object is moving across the sky, in arcseconds per minute. Computed from JPL Horizons RA_rate and DEC_rate at the predicted observation time. Falls back to JPL Scout's rate field if Horizons is unavailable. Important for exposure planning — fast-moving objects will trail in long exposures."],
               ["Motion Direction", "The position angle (PA) of the object's motion, measured in degrees from north through east (standard astronomical convention). Computed from JPL Horizons RA_rate and DEC_rate. Also shown as a cardinal direction (N, NE, E, etc.) and as an arrow on the finder chart."],
-              ["Max Exposure", "The longest exposure before the object trails beyond the configured max trail length (default: seeing FWHM). Computed server-side as max_trail_arcsec / (motion_rate / 60). Targets with max exposure below 1 second are filtered out. See the Streaking / Trailing section for details."],
+              ["Max Exposure", "The longest exposure before the object trails beyond the configured max trail length (default: seeing FWHM). Computed server-side as max_trail_arcsec / (motion_rate / 60). This value is informational only — no targets are filtered based on it. See the Streaking / Trailing section for details."],
               ["Predicted Position", "If available from JPL Horizons, the predicted RA/Dec at the transit time. More accurate than the NEOCP position for fast-moving objects. Falls back to NEOCP position for objects not yet in Horizons."],
               ["Finder Chart", "An SVG star chart showing the target's position relative to nearby catalog stars. 15' field of view, N up, E left (standard astronomical orientation). Target is marked with crosshairs. If motion data is available, a dashed amber arrow shows the direction and rate of motion (scaled to 10 minutes of travel)."],
             ]}
