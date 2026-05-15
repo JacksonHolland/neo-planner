@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
+import BouncingTim from "@/components/BouncingTim";
 import Galaxy from "@/components/Galaxy";
 import "./globals.css";
 
@@ -27,10 +29,22 @@ export default function RootLayout({
             repulsionStrength={1}
           />
         </div>
+        <BouncingTim />
         <nav className="border-b border-white/15 bg-black/70 backdrop-blur">
           <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="font-semibold tracking-wide text-white">
-              Targets
+            <Link
+              href="/"
+              aria-label="Home"
+              className="flex items-center hover:opacity-80 transition-opacity"
+            >
+              <Image
+                src="/mit-logo.png"
+                alt="MIT"
+                width={62}
+                height={32}
+                priority
+                className="h-7 w-auto"
+              />
             </Link>
             <div className="flex items-center gap-6 text-sm text-white/85">
               <Link href="/" className="hover:text-white transition-colors">
