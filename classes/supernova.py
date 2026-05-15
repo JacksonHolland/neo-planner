@@ -30,11 +30,12 @@ from sources.fink_ztf import start_fink_ztf_consumer
 class SupernovaFilters(BaseModel):
     """Query params for ``GET /classes/supernova/targets``."""
 
-    lat: float = Field(..., ge=-90, le=90, title="Latitude (deg)",
+    # observer + telescope (defaults are Wallace Astrophysical Observatory)
+    lat: float = Field(42.6097, ge=-90, le=90, title="Latitude (deg)",
                        description="Observer latitude, north positive")
-    lon: float = Field(..., ge=-180, le=180, title="Longitude (deg)",
+    lon: float = Field(-71.4844, ge=-180, le=180, title="Longitude (deg)",
                        description="Observer longitude, east positive")
-    alt_m: float = Field(0, ge=-500, le=10000, title="Altitude (m)",
+    alt_m: float = Field(180, ge=-500, le=10000, title="Altitude (m)",
                         description="Height above sea level")
     limiting_mag: float = Field(19.0, ge=5, le=30, title="Limiting magnitude",
                                description="Faintest detectable apparent magnitude")
