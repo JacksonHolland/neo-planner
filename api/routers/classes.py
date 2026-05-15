@@ -9,13 +9,14 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
-from api.models import ClassResponse, TargetResponse, TargetsResponse
+from api.models import ClassResponse, SourceInfo, TargetResponse, TargetsResponse
 from classes import CLASSES
 from classes.base import TargetClass
 from core.observability import filter_observable
 from core.position import extrapolate_to_now
 from core.target import Target
 from core.telescope import TelescopeProfile
+from sources.registry import resolve_catalog, resolve_source
 
 router = APIRouter(prefix="/classes", tags=["classes"])
 
@@ -25,8 +26,8 @@ def _class_response(c: TargetClass) -> ClassResponse:
         name=c.name,
         label=c.label,
         description=c.description,
-        canonical_catalog=c.canonical_catalog,
-        sources=c.sources,
+        canonical_catalog=SourceInfo(**resolve_catalog(c.canonical_catalog)),
+        sources=[SourceInfo(**resolve_source(s)) for s in c.sources],
         filters_schema=c.filter_model.model_json_schema(),
     )
 

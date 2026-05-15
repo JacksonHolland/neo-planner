@@ -59,12 +59,20 @@ class TargetsResponse(BaseModel):
     targets: List[TargetResponse]
 
 
+class SourceInfo(BaseModel):
+    """A data source or canonical catalog rendered with a label and link."""
+
+    name: str
+    label: str
+    url: str
+
+
 class ClassResponse(BaseModel):
     """Response for ``GET /classes`` (list) and ``GET /classes/{name}`` (detail)."""
 
     name: str
     label: str
     description: str
-    canonical_catalog: str
-    sources: List[str]
+    canonical_catalog: SourceInfo
+    sources: List[SourceInfo]
     filters_schema: Dict[str, Any]

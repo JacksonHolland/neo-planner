@@ -12,12 +12,14 @@ type JSONSchemaField = {
   anyOf?: { type: string }[];
 };
 
+type SourceRef = { name: string; label: string; url: string };
+
 type ClassInfo = {
   name: string;
   label: string;
   description: string;
-  canonical_catalog: string;
-  sources: string[];
+  canonical_catalog: SourceRef;
+  sources: SourceRef[];
   filters_schema: {
     properties?: Record<string, JSONSchemaField>;
     required?: string[];
@@ -65,12 +67,45 @@ export default function DocsPage() {
           >
             <header>
               <h2 className="text-xl font-semibold text-white">{c.label}</h2>
-              <p className="text-xs text-white/80 mt-1">
+              <p className="text-xs text-white/85 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <code className="text-white">{c.name}</code>
-                <span className="mx-2 text-white/40">|</span>
-                canonical catalog: <span className="text-white">{c.canonical_catalog}</span>
-                <span className="mx-2 text-white/40">|</span>
-                sources: <span className="text-white">{c.sources.join(", ")}</span>
+                <span className="text-white/40">|</span>
+                <span>
+                  Canonical catalog:{" "}
+                  {c.canonical_catalog.url ? (
+                    <a
+                      href={c.canonical_catalog.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-white underline decoration-white/50 hover:decoration-white"
+                    >
+                      {c.canonical_catalog.label}
+                    </a>
+                  ) : (
+                    <span className="text-white">{c.canonical_catalog.label}</span>
+                  )}
+                </span>
+                <span className="text-white/40">|</span>
+                <span className="flex flex-wrap items-center gap-x-1">
+                  Sources:
+                  {c.sources.map((s, i) => (
+                    <span key={s.name} className="flex items-center">
+                      {s.url ? (
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-white underline decoration-white/50 hover:decoration-white"
+                        >
+                          {s.label}
+                        </a>
+                      ) : (
+                        <span className="text-white">{s.label}</span>
+                      )}
+                      {i < c.sources.length - 1 && <span className="text-white/40">,&nbsp;</span>}
+                    </span>
+                  ))}
+                </span>
               </p>
             </header>
             <p className="text-sm text-white/90">{c.description}</p>

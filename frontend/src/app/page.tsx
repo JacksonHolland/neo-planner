@@ -21,12 +21,14 @@ type JSONSchema = {
   required?: string[];
 };
 
+type SourceRef = { name: string; label: string; url: string };
+
 type ClassInfo = {
   name: string;
   label: string;
   description: string;
-  canonical_catalog: string;
-  sources: string[];
+  canonical_catalog: SourceRef;
+  sources: SourceRef[];
   filters_schema: JSONSchema;
 };
 
@@ -233,10 +235,43 @@ export default function HomePage() {
           ))}
         </select>
         {currentClass && (
-          <span className="text-xs text-white/80">
-            canonical catalog: <span className="text-white">{currentClass.canonical_catalog}</span>
-            <span className="mx-2 text-white/40">|</span>
-            sources: <span className="text-white">{currentClass.sources.join(", ")}</span>
+          <span className="text-xs text-white/85 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              Canonical catalog:{" "}
+              {currentClass.canonical_catalog.url ? (
+                <a
+                  href={currentClass.canonical_catalog.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-white underline decoration-white/50 hover:decoration-white"
+                >
+                  {currentClass.canonical_catalog.label}
+                </a>
+              ) : (
+                <span className="text-white">{currentClass.canonical_catalog.label}</span>
+              )}
+            </span>
+            <span className="text-white/40">|</span>
+            <span className="flex flex-wrap items-center gap-x-1">
+              Sources:
+              {currentClass.sources.map((s, i) => (
+                <span key={s.name} className="flex items-center">
+                  {s.url ? (
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-white underline decoration-white/50 hover:decoration-white"
+                    >
+                      {s.label}
+                    </a>
+                  ) : (
+                    <span className="text-white">{s.label}</span>
+                  )}
+                  {i < currentClass.sources.length - 1 && <span className="text-white/40">,&nbsp;</span>}
+                </span>
+              ))}
+            </span>
           </span>
         )}
       </section>
