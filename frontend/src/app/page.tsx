@@ -85,7 +85,11 @@ function inputForField(
   const cls = `w-full bg-black/70 border ${border} focus:outline-none rounded px-2 py-1.5 text-sm text-white placeholder-white/40`;
   if (type === "boolean") {
     return (
-      <select className={cls} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className={`${cls} cursor-pointer`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
         <option value="">any</option>
         <option value="true">yes</option>
         <option value="false">no</option>
@@ -224,7 +228,7 @@ export default function HomePage() {
         </label>
         <select
           id="class-select"
-          className="bg-black/80 border border-white/30 focus:border-white/60 focus:outline-none rounded px-3 py-1.5 text-sm text-white"
+          className="bg-black/80 border border-white/30 focus:border-white/60 focus:outline-none rounded px-3 py-1.5 text-sm text-white cursor-pointer"
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
         >
@@ -325,7 +329,7 @@ export default function HomePage() {
             <button
               onClick={submit}
               disabled={loading}
-              className="px-4 py-2 rounded bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-white/60"
+              className="px-4 py-2 rounded bg-white text-black text-sm font-semibold hover:bg-white/90 active:bg-white/80 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/60 transition-colors"
             >
               {loading ? "Loading…" : "Find targets"}
             </button>
