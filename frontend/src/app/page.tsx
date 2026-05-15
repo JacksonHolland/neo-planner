@@ -74,10 +74,13 @@ function inputForField(
   field: JSONSchemaField,
   value: string,
   onChange: (v: string) => void,
+  hasError: boolean,
 ) {
   const type = fieldUnderlyingType(field);
-  const cls =
-    "w-full bg-black/70 border border-white/30 focus:border-white/60 focus:outline-none rounded px-2 py-1.5 text-sm text-white placeholder-white/40";
+  const border = hasError
+    ? "border-red-400 focus:border-red-300"
+    : "border-white/30 focus:border-white/60";
+  const cls = `w-full bg-black/70 border ${border} focus:outline-none rounded px-2 py-1.5 text-sm text-white placeholder-white/40`;
   if (type === "boolean") {
     return (
       <select className={cls} value={value} onChange={(e) => onChange(e.target.value)}>
@@ -116,6 +119,8 @@ function deg2dms(deg: number): string {
   return `${sign}${String(dd).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${ss.toFixed(1).padStart(4, "0")}`;
 }
 
+type FieldError = { field: string | null; label?: string | null; message: string };
+
 export default function HomePage() {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -123,6 +128,7 @@ export default function HomePage() {
   const [response, setResponse] = useState<TargetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch(`${API_BASE}/classes`)
@@ -149,12 +155,30 @@ export default function HomePage() {
     }
     setValues(defaults);
     setResponse(null);
+    setError(null);
+    setFieldErrors({});
   }, [currentClass]);
 
   const submit = useCallback(async () => {
     if (!currentClass) return;
+
+    // Client-side: required fields must be filled
+    const required = new Set(currentClass.filters_schema.required || []);
+    const clientErrors: Record<string, string> = {};
+    for (const k of required) {
+      if (!values[k] || values[k].trim() === "") {
+        clientErrors[k] = "Required";
+      }
+    }
+    if (Object.keys(clientErrors).length > 0) {
+      setFieldErrors(clientErrors);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setFieldErrors({});
     try {
       const params = new URLSearchParams();
       for (const [k, v] of Object.entries(values)) {
@@ -164,8 +188,19 @@ export default function HomePage() {
       const url = `${API_BASE}/classes/${currentClass.name}/targets?${params}`;
       const r = await fetch(url);
       if (!r.ok) {
-        const t = await r.text();
-        throw new Error(`${r.status} ${t}`);
+        const body = await r.json().catch(() => null);
+        const errs: FieldError[] | undefined = body?.detail?.errors;
+        if (errs && Array.isArray(errs)) {
+          const map: Record<string, string> = {};
+          for (const e of errs) {
+            if (e.field) map[e.field] = e.message;
+          }
+          setFieldErrors(map);
+          setError(null);
+        } else {
+          setError(`${r.status} ${body?.detail || (await r.text())}`);
+        }
+        return;
       }
       const data: TargetsResponse = await r.json();
       setResponse(data);
@@ -210,19 +245,47 @@ export default function HomePage() {
         <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4">
           <p className="text-sm text-white/90 mb-4">{currentClass.description}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Object.entries(props).map(([k, f]) => (
-              <label key={k} className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-white flex items-center gap-1">
-                  {f.title || k}
-                  {required.has(k) && <span className="text-red-400" aria-label="required">*</span>}
-                </span>
-                {inputForField(f, values[k] ?? "", (v) => setValues({ ...values, [k]: v }))}
-                {f.description && (
-                  <span className="text-xs text-white/75 leading-snug">{f.description}</span>
-                )}
-              </label>
-            ))}
+            {Object.entries(props).map(([k, f]) => {
+              const fieldError = fieldErrors[k];
+              return (
+                <label key={k} className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-white flex items-center gap-1">
+                    {f.title || k}
+                    {required.has(k) && <span className="text-red-400" aria-label="required">*</span>}
+                  </span>
+                  {inputForField(
+                    f,
+                    values[k] ?? "",
+                    (v) => {
+                      setValues({ ...values, [k]: v });
+                      if (fieldErrors[k]) {
+                        const next = { ...fieldErrors };
+                        delete next[k];
+                        setFieldErrors(next);
+                      }
+                    },
+                    Boolean(fieldError),
+                  )}
+                  {fieldError ? (
+                    <span className="text-xs text-red-300" role="alert">{fieldError}</span>
+                  ) : (
+                    f.description && (
+                      <span className="text-xs text-white/75 leading-snug">{f.description}</span>
+                    )
+                  )}
+                </label>
+              );
+            })}
           </div>
+          {Object.keys(fieldErrors).length > 0 && (
+            <div
+              role="alert"
+              className="mt-4 rounded border border-red-400/60 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+            >
+              Please fix {Object.keys(fieldErrors).length} field
+              {Object.keys(fieldErrors).length === 1 ? "" : "s"} above before submitting.
+            </div>
+          )}
           <div className="mt-5 flex items-center gap-3">
             <button
               onClick={submit}

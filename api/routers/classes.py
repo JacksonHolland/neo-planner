@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import ValidationError
 
 from api.models import ClassResponse, TargetResponse, TargetsResponse
 from classes import CLASSES
@@ -84,8 +85,19 @@ def get_targets(name: str, request: Request) -> TargetsResponse:
 
     try:
         filters = cls.filter_model(**dict(request.query_params))
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    except ValidationError as exc:
+        errors = []
+        for e in exc.errors():
+            loc = [str(p) for p in e.get("loc", []) if p != "__root__"]
+            field = ".".join(loc) if loc else None
+            schema_field = (cls.filter_model.model_fields.get(field) if field else None)
+            label = (schema_field.title if schema_field and schema_field.title else field)
+            errors.append({
+                "field": field,
+                "label": label,
+                "message": e.get("msg", "invalid value"),
+            })
+        raise HTTPException(status_code=422, detail={"errors": errors})
 
     targets = cls.get_targets()
     targets = cls.apply_filters(targets, filters)
