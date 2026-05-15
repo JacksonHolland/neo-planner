@@ -4,6 +4,53 @@ import { useEffect, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function Code({ children }: { children: React.ReactNode }) {
+  return (
+    <pre className="bg-black/80 border border-white/15 rounded p-3 text-xs text-white/95 overflow-x-auto font-mono leading-relaxed">
+      {children}
+    </pre>
+  );
+}
+
+function Endpoint({
+  method,
+  path,
+  summary,
+  description,
+  paramsExample,
+  responseExample,
+}: {
+  method: string;
+  path: string;
+  summary: string;
+  description: string;
+  paramsExample?: string;
+  responseExample: string;
+}) {
+  return (
+    <div className="space-y-2 border-t border-white/10 pt-4 first:border-0 first:pt-0">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-500/40">
+          {method}
+        </span>
+        <code className="text-sm text-white">{path}</code>
+        <span className="text-sm text-white/80">— {summary}</span>
+      </div>
+      <p className="text-sm text-white/85">{description}</p>
+      {paramsExample && (
+        <div>
+          <div className="text-xs text-white/70 mb-1">Example request</div>
+          <Code>{paramsExample}</Code>
+        </div>
+      )}
+      <div>
+        <div className="text-xs text-white/70 mb-1">Example response</div>
+        <Code>{responseExample}</Code>
+      </div>
+    </div>
+  );
+}
+
 type JSONSchemaField = {
   type?: string;
   title?: string;
@@ -55,14 +102,165 @@ export default function DocsPage() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4 space-y-2">
-        <h1 className="text-2xl font-semibold text-white">API</h1>
-        <ul className="text-sm text-white/95 space-y-1 font-mono">
-          <li>GET /classes</li>
-          <li>GET /classes/&#123;name&#125;</li>
-          <li>GET /classes/&#123;name&#125;/targets?lat=&amp;lon=&amp;…</li>
-          <li>GET /health</li>
-        </ul>
+      <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4 space-y-4">
+        <header className="space-y-1">
+          <h1 className="text-2xl font-semibold text-white">API</h1>
+          <p className="text-sm text-white/80">
+            JSON over HTTP. CORS-open and unauthenticated. The full machine-readable
+            spec is at{" "}
+            <a
+              href={`${API_BASE}/docs`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-white underline decoration-white/50 hover:decoration-white"
+            >
+              /docs (Swagger)
+            </a>{" "}
+            and{" "}
+            <a
+              href={`${API_BASE}/redoc`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-white underline decoration-white/50 hover:decoration-white"
+            >
+              /redoc
+            </a>
+            ; or as raw OpenAPI JSON at{" "}
+            <a
+              href={`${API_BASE}/openapi.json`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-white underline decoration-white/50 hover:decoration-white"
+            >
+              /openapi.json
+            </a>
+            . Per-class filter schemas and presets are listed below.
+          </p>
+        </header>
+
+        <div className="space-y-5">
+          <Endpoint
+            method="GET"
+            path="/classes"
+            summary="list every registered class"
+            description="Returns one entry per class with its label, description, canonical catalog, sources (with outbound URLs), filter JSON schema, and presets. Use this to drive a class-picker UI or to discover what filter params each class accepts."
+            paramsExample={`curl ${API_BASE}/classes`}
+            responseExample={`[
+  {
+    "name": "neo",
+    "label": "Near-Earth Objects",
+    "description": "Near-Earth asteroids and comets. ...",
+    "canonical_catalog": {
+      "name": "MPC",
+      "label": "Minor Planet Center",
+      "url": "https://www.minorplanetcenter.net/"
+    },
+    "sources": [
+      { "name": "neocp", "label": "MPC NEOCP", "url": "..." },
+      { "name": "fink_ztf", "label": "Fink ZTF", "url": "..." }
+    ],
+    "filters_schema": { /* JSON Schema for query params */ },
+    "presets": [
+      {
+        "name": "neocp_followup",
+        "label": "NEOCP follow-up",
+        "description": "Catalogued NEOs that need more astrometry.",
+        "values": { "catalogued": true }
+      }
+    ]
+  }
+]`}
+          />
+
+          <Endpoint
+            method="GET"
+            path="/classes/{name}"
+            summary="detail for one class"
+            description="Same shape as one entry from /classes. Useful when a client already knows the class name and only needs the filter schema or presets."
+            paramsExample={`curl ${API_BASE}/classes/neo`}
+            responseExample={`{
+  "name": "neo",
+  "label": "Near-Earth Objects",
+  "description": "...",
+  "canonical_catalog": { "name": "MPC", "label": "Minor Planet Center", "url": "..." },
+  "sources": [ ... ],
+  "filters_schema": { ... },
+  "presets": [ ... ]
+}`}
+          />
+
+          <Endpoint
+            method="GET"
+            path="/classes/{name}/targets"
+            summary="observable, filtered targets for the named class"
+            description={
+              "Query params are the class's filter fields (see the per-class table below). The endpoint runs the class's filter, the generic observability engine (above-horizon, dark, moon separation, hour-angle / azimuth limits), then linearly extrapolates moving-object positions to 'now' and returns the top n_targets. Validation errors come back as 422 with a structured payload."
+            }
+            paramsExample={`curl '${API_BASE}/classes/neo/targets?lat=42.6097&lon=-71.4844&catalogued=true&n_targets=10'`}
+            responseExample={`{
+  "total": 10,
+  "class_name": "neo",
+  "targets": [
+    {
+      "designation": "2024 AB12",
+      "source": "neocp",
+      "source_url": "https://www.minorplanetcenter.net/...",
+      "target_class": "neo",
+      "catalogued": true,
+      "catalog_match": "2024 AB12",
+      "ra_deg": 187.345,
+      "dec_deg": 4.21,
+      "epoch": "2026-05-15T03:42:00+00:00",
+      "observed_at": "2026-05-15T01:22:00+00:00",
+      "motion_rate_arcsec_min": 1.42,
+      "motion_pa_deg": 73.9,
+      "mag_v": 19.4,
+      "n_obs": 17,
+      "arc_days": 0.6,
+      "neo_score": 92.0,
+      "observable": true,
+      "obs_window_hours": 3.2,
+      "best_altitude_deg": 58.0,
+      "moon_sep_deg": 95.4
+    }
+  ]
+}`}
+          />
+
+          <Endpoint
+            method="GET"
+            path="/health"
+            summary="liveness probe + per-class cache counts"
+            description="Returns the registered classes, their declared sources, and the current cache size. Use for monitoring or to confirm ingestion threads are running."
+            paramsExample={`curl ${API_BASE}/health`}
+            responseExample={`{
+  "status": "ok",
+  "classes": {
+    "neo":       { "cached_targets": 162, "sources": ["neocp", "scout", "sentry", "fink_lsst", "fink_ztf"] },
+    "supernova": { "cached_targets": 191, "sources": ["fink_lsst", "fink_ztf"] }
+  }
+}`}
+          />
+        </div>
+
+        <div className="border-t border-white/10 pt-4 space-y-2">
+          <h2 className="text-sm font-semibold text-white">Validation errors</h2>
+          <p className="text-sm text-white/85">
+            Invalid query params return HTTP 422 with a structured list of failures.
+            Each entry carries the field's slug, its human label, and a message.
+          </p>
+          <Code>
+            {`{
+  "detail": {
+    "errors": [
+      { "field": "lat", "label": "Latitude (deg)", "message": "Field required" },
+      { "field": "limiting_mag", "label": "Limiting magnitude",
+        "message": "Input should be less than or equal to 30" }
+    ]
+  }
+}`}
+          </Code>
+        </div>
       </section>
 
       {classes.map((c) => {
