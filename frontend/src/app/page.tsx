@@ -23,6 +23,13 @@ type JSONSchema = {
 
 type SourceRef = { name: string; label: string; url: string };
 
+type Preset = {
+  name: string;
+  label: string;
+  description: string;
+  values: Record<string, unknown>;
+};
+
 type ClassInfo = {
   name: string;
   label: string;
@@ -30,6 +37,7 @@ type ClassInfo = {
   canonical_catalog: SourceRef;
   sources: SourceRef[];
   filters_schema: JSONSchema;
+  presets: Preset[];
 };
 
 type Target = {
@@ -283,6 +291,29 @@ export default function HomePage() {
       {currentClass && (
         <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4">
           <p className="text-sm text-white/90 mb-4">{currentClass.description}</p>
+          {currentClass.presets.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-white/70 mr-1">Presets</span>
+              {currentClass.presets.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  title={p.description}
+                  onClick={() => {
+                    const next = { ...values };
+                    for (const [k, v] of Object.entries(p.values)) {
+                      next[k] = v === null || v === undefined ? "" : String(v);
+                    }
+                    setValues(next);
+                    setFieldErrors({});
+                  }}
+                  className="px-3 py-1 rounded-full text-xs font-medium bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 text-white cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-white/50"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Object.entries(props).map(([k, f]) => {
               const fieldError = fieldErrors[k];

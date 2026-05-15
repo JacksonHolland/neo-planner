@@ -9,7 +9,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
-from api.models import ClassResponse, SourceInfo, TargetResponse, TargetsResponse
+from api.models import ClassResponse, PresetResponse, SourceInfo, TargetResponse, TargetsResponse
 from classes import CLASSES
 from classes.base import TargetClass
 from core.observability import filter_observable
@@ -29,6 +29,10 @@ def _class_response(c: TargetClass) -> ClassResponse:
         canonical_catalog=SourceInfo(**resolve_catalog(c.canonical_catalog)),
         sources=[SourceInfo(**resolve_source(s)) for s in c.sources],
         filters_schema=c.filter_model.model_json_schema(),
+        presets=[
+            PresetResponse(name=p.name, label=p.label, description=p.description, values=p.values)
+            for p in c.presets
+        ],
     )
 
 

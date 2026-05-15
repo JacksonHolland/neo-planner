@@ -67,6 +67,15 @@ class SourceInfo(BaseModel):
     url: str
 
 
+class PresetResponse(BaseModel):
+    """A named filter combination surfaced as a UI button."""
+
+    name: str
+    label: str
+    description: str
+    values: Dict[str, Any]
+
+
 class ClassResponse(BaseModel):
     """Response for ``GET /classes`` (list) and ``GET /classes/{name}`` (detail)."""
 
@@ -76,3 +85,4 @@ class ClassResponse(BaseModel):
     canonical_catalog: SourceInfo
     sources: List[SourceInfo]
     filters_schema: Dict[str, Any]
+    presets: List[PresetResponse]

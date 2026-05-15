@@ -25,7 +25,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from classes import CLASSES
-from classes.base import TargetClass
+from classes.base import Preset, TargetClass
 from core.target import Target
 from sources.fink_lsst import start_fink_lsst_consumer
 from sources.fink_ztf import start_fink_ztf_consumer
@@ -339,6 +339,26 @@ TARGET_CLASS = TargetClass(
     sources=["neocp", "scout", "sentry", "fink_lsst", "fink_ztf"],
     get_targets=get_targets,
     apply_filters=apply_filters,
+    presets=[
+        Preset(
+            name="neocp_followup",
+            label="NEOCP follow-up",
+            description="Catalogued NEOs from the MPC Confirmation Page that need more astrometry.",
+            values={"catalogued": True},
+        ),
+        Preset(
+            name="fresh_unknowns",
+            label="Fresh unknowns",
+            description="Un-catalogued SSO candidates from Fink (LSST + ZTF) detected in the last 48 hours.",
+            values={"catalogued": False, "max_age_hours": 48},
+        ),
+        Preset(
+            name="fast_movers",
+            label="Fast movers",
+            description="Trailing-rate above 1 arcsec/min — typically near-Earth, not main belt.",
+            values={"motion_rate_min": 1.0},
+        ),
+    ],
 )
 
 CLASSES["neo"] = TARGET_CLASS

@@ -20,7 +20,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from classes import CLASSES
-from classes.base import TargetClass
+from classes.base import Preset, TargetClass
 from core.target import Target
 from sources.fink_lsst import start_fink_lsst_consumer
 from sources.fink_ztf import start_fink_ztf_consumer
@@ -212,6 +212,26 @@ TARGET_CLASS = TargetClass(
     sources=["fink_lsst", "fink_ztf"],
     get_targets=get_targets,
     apply_filters=apply_filters,
+    presets=[
+        Preset(
+            name="tns_classified",
+            label="TNS classified",
+            description="Candidates already in the Transient Name Server — known type, useful for photometric follow-up.",
+            values={"catalogued": True},
+        ),
+        Preset(
+            name="unclassified",
+            label="Unclassified",
+            description="Recent SN candidates not yet in TNS — earliest chance to characterize.",
+            values={"catalogued": False, "max_age_hours": 72},
+        ),
+        Preset(
+            name="bright_only",
+            label="Bright only",
+            description="Within reach of sub-meter telescopes.",
+            values={"limiting_mag": 18.5},
+        ),
+    ],
 )
 
 CLASSES["supernova"] = TARGET_CLASS

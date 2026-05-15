@@ -14,6 +14,13 @@ type JSONSchemaField = {
 
 type SourceRef = { name: string; label: string; url: string };
 
+type Preset = {
+  name: string;
+  label: string;
+  description: string;
+  values: Record<string, unknown>;
+};
+
 type ClassInfo = {
   name: string;
   label: string;
@@ -24,6 +31,7 @@ type ClassInfo = {
     properties?: Record<string, JSONSchemaField>;
     required?: string[];
   };
+  presets: Preset[];
 };
 
 function fieldType(f: JSONSchemaField): string {
@@ -109,6 +117,24 @@ export default function DocsPage() {
               </p>
             </header>
             <p className="text-sm text-white/90">{c.description}</p>
+            {c.presets.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-2">Presets</h3>
+                <ul className="space-y-1 text-xs text-white/90">
+                  {c.presets.map((p) => (
+                    <li key={p.name}>
+                      <span className="font-medium text-white">{p.label}</span>
+                      <span className="text-white/70"> — {p.description}</span>
+                      <span className="ml-2 font-mono text-white/60">
+                        {Object.entries(p.values)
+                          .map(([k, v]) => `${k}=${v}`)
+                          .join(", ")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="text-white bg-white/10">
