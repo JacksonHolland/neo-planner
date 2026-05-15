@@ -69,7 +69,14 @@ type Target = {
   moon_sep_deg: number | null;
 };
 
-type TargetsResponse = { total: number; class_name: string; targets: Target[] };
+type TargetsResponse = {
+  total: number;
+  class_name: string;
+  targets: Target[];
+  cache_size: number;
+  matched_filters: number;
+  matched_observability: number;
+};
 
 function fieldUnderlyingType(f: JSONSchemaField): string {
   if (f.type) return f.type;
@@ -369,10 +376,64 @@ export default function HomePage() {
         </section>
       )}
 
-      {response && (
+      {response && response.total === 0 && (
+        <section className="rounded-lg border border-amber-400/40 bg-amber-500/10 backdrop-blur-sm px-4 py-3">
+          <div className="text-sm font-semibold text-amber-100 mb-2">No targets to show</div>
+          {(() => {
+            // Build a stage-by-stage explanation from diagnostics.
+            const { cache_size, matched_filters, matched_observability } = response;
+            if (cache_size === 0) {
+              return (
+                <p className="text-sm text-amber-100/90">
+                  The cache for this class is empty. Ingestion threads may still be warming up,
+                  or no alerts have been produced yet on this Kafka topic. Try again in a minute,
+                  or check <code className="text-white">/health</code> to see source status.
+                </p>
+              );
+            }
+            if (matched_filters === 0) {
+              return (
+                <p className="text-sm text-amber-100/90">
+                  {cache_size} target{cache_size === 1 ? "" : "s"} in the cache, but none matched your filters.
+                  Try removing the catalogued toggle, raising <code className="text-white">max_age_hours</code>,
+                  or relaxing <code className="text-white">motion_rate_min</code> / <code className="text-white">mag_h_max</code>.
+                </p>
+              );
+            }
+            if (matched_observability === 0) {
+              return (
+                <p className="text-sm text-amber-100/90">
+                  {matched_filters} target{matched_filters === 1 ? "" : "s"} matched your filters, but none
+                  are observable from your location tonight. Possible reasons: targets are at declinations
+                  outside your accessible sky, currently below the horizon during astronomical night, or too
+                  close to the Moon. Try lowering <code className="text-white">min_altitude_deg</code> or
+                  <code className="text-white"> min_moon_sep_deg</code>, or check that your latitude/longitude are correct.
+                </p>
+              );
+            }
+            return (
+              <p className="text-sm text-amber-100/90">
+                {matched_observability} observable target{matched_observability === 1 ? "" : "s"} found, but
+                <code className="text-white"> n_targets</code> is 0 or the ranking dropped them all. Increase
+                <code className="text-white"> n_targets</code>.
+              </p>
+            );
+          })()}
+          <div className="mt-3 text-xs text-amber-100/70 flex flex-wrap gap-x-4 gap-y-1">
+            <span>cache: <span className="text-white">{response.cache_size}</span></span>
+            <span>after filters: <span className="text-white">{response.matched_filters}</span></span>
+            <span>after observability: <span className="text-white">{response.matched_observability}</span></span>
+          </div>
+        </section>
+      )}
+
+      {response && response.total > 0 && (
         <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm overflow-hidden">
-          <div className="px-4 py-2 text-sm text-white border-b border-white/15 bg-white/5">
-            {response.total} target{response.total === 1 ? "" : "s"}
+          <div className="px-4 py-2 text-sm text-white border-b border-white/15 bg-white/5 flex flex-wrap items-center justify-between gap-2">
+            <span>{response.total} target{response.total === 1 ? "" : "s"}</span>
+            <span className="text-xs text-white/70">
+              cache {response.cache_size} · filters {response.matched_filters} · observable {response.matched_observability}
+            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

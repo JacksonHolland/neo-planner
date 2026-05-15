@@ -57,6 +57,10 @@ class TargetsResponse(BaseModel):
     total: int
     class_name: str
     targets: List[TargetResponse]
+    # Diagnostics — populated to help the UI explain empty results.
+    cache_size: int
+    matched_filters: int
+    matched_observability: int
 
 
 class SourceInfo(BaseModel):

@@ -104,12 +104,16 @@ def get_targets(name: str, request: Request) -> TargetsResponse:
             })
         raise HTTPException(status_code=422, detail={"errors": errors})
 
-    targets = cls.get_targets()
-    targets = cls.apply_filters(targets, filters)
+    cache = cls.get_targets()
+    cache_size = len(cache)
+
+    after_filters = cls.apply_filters(cache, filters)
+    matched_filters = len(after_filters)
 
     profile = _profile_from_filters(filters)
-    targets = [copy.deepcopy(t) for t in targets]
+    targets = [copy.deepcopy(t) for t in after_filters]
     observable = filter_observable(targets, profile)
+    matched_observability = len(observable)
 
     now = datetime.now(timezone.utc)
     for t in observable:
@@ -120,4 +124,7 @@ def get_targets(name: str, request: Request) -> TargetsResponse:
         total=len(observable),
         class_name=name,
         targets=[_target_response(t) for t in observable],
+        cache_size=cache_size,
+        matched_filters=matched_filters,
+        matched_observability=matched_observability,
     )
