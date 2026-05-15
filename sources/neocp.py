@@ -8,12 +8,11 @@ from typing import List
 import requests
 
 from core.target import Target
-from sources.base import SourceAdapter
 
 NEOCP_URL = "https://www.minorplanetcenter.net/Extended_Files/neocp.json"
 
 
-class NEOCPAdapter(SourceAdapter):
+class NEOCPAdapter:
     """
     Polls the MPC NEOCP JSON feed and normalizes each candidate into a Target.
 

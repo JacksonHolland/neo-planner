@@ -1,50 +1,44 @@
-"""Pydantic models for API request/response schemas."""
+"""Pydantic models for API responses."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
-
-
-class TelescopeParams(BaseModel):
-    """Query parameters describing the observer's telescope / location."""
-    lat: float = Field(..., description="Latitude (degrees, north positive)")
-    lon: float = Field(..., description="Longitude (degrees, east positive)")
-    alt_m: float = Field(0, description="Altitude above sea level (metres)")
-    limiting_mag: float = Field(18.0, description="Faintest detectable magnitude")
-    min_altitude_deg: float = Field(20.0, description="Minimum target altitude")
-    min_moon_sep_deg: float = Field(30.0, description="Minimum Moon separation")
-    min_ha_hours: float = Field(-6.0, description="Western hour-angle limit (hours)")
-    max_ha_hours: float = Field(6.0, description="Eastern hour-angle limit (hours)")
-    min_az_deg: float = Field(0.0, description="Minimum azimuth (degrees)")
-    max_az_deg: float = Field(360.0, description="Maximum azimuth (degrees)")
-    plate_scale_arcsec: float = Field(2.0, description="Plate scale (arcsec/pixel)")
-    seeing_arcsec: float = Field(2.5, description="Typical seeing FWHM (arcsec)")
-    max_trail_arcsec: float = Field(2.5, description="Max acceptable trail length (arcsec)")
+from pydantic import BaseModel
 
 
 class TargetResponse(BaseModel):
-    """A single target in the API response."""
+    """One target as returned by ``GET /classes/{name}/targets``."""
+
+    # identity
     designation: str
     source: str
+    source_url: Optional[str] = None
+
+    # classification
+    target_class: Optional[str] = None
+    catalogued: Optional[bool] = None
+    catalog_match: Optional[str] = None
+
+    # position
     ra_deg: Optional[float] = None
     dec_deg: Optional[float] = None
+    epoch: Optional[str] = None
+    observed_at: Optional[str] = None
+    motion_rate_arcsec_min: Optional[float] = None
+    motion_pa_deg: Optional[float] = None
+
+    # brightness / orbit context
     mag_v: Optional[float] = None
     mag_h: Optional[float] = None
     n_obs: int = 0
-    arc_days: float = 0
-    not_seen_days: float = 0
+    arc_days: float = 0.0
+    not_seen_days: float = 0.0
     neo_score: Optional[float] = None
     pha_score: Optional[float] = None
     impact_prob: Optional[float] = None
-    predicted_ra_deg: Optional[float] = None
-    predicted_dec_deg: Optional[float] = None
-    predicted_epoch: Optional[str] = None
-    motion_rate_arcsec_min: Optional[float] = None
-    motion_pa_deg: Optional[float] = None
-    predicted_mag: Optional[float] = None
-    max_exposure_sec: Optional[float] = None
+
+    # observability (computed at request time)
     observable: Optional[bool] = None
     obs_window_start: Optional[str] = None
     obs_window_end: Optional[str] = None
@@ -55,26 +49,22 @@ class TargetResponse(BaseModel):
     best_ha_hours: Optional[float] = None
     moon_sep_deg: Optional[float] = None
     transit_time: Optional[str] = None
-    priority_score: Optional[float] = None
-    source_url: Optional[str] = None
 
 
-class TonightResponse(BaseModel):
-    """Response for GET /targets/tonight."""
+class TargetsResponse(BaseModel):
+    """Response for ``GET /classes/{name}/targets``."""
+
     total: int
-    telescope: Dict[str, Any]
+    class_name: str
     targets: List[TargetResponse]
 
 
-class SourceStatusResponse(BaseModel):
-    """Response for GET /sources/neocp etc."""
-    source: str
-    count: int
-    last_fetched: Optional[str] = None
-    targets: List[TargetResponse]
+class ClassResponse(BaseModel):
+    """Response for ``GET /classes`` (list) and ``GET /classes/{name}`` (detail)."""
 
-
-class HealthResponse(BaseModel):
-    status: str
-    sources: Dict[str, int]
-    last_refresh: Optional[str] = None
+    name: str
+    label: str
+    description: str
+    canonical_catalog: str
+    sources: List[str]
+    filters_schema: Dict[str, Any]

@@ -1,41 +1,52 @@
-"""Common Target schema — every alert source normalizes into this."""
+"""Common Target schema — every source produces and every class caches these."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
 class Target:
-    """A single NEO / asteroid candidate that may warrant follow-up."""
+    """A single follow-up target."""
 
-    # ── Identity ──────────────────────────────────────────────────────
-    designation: str                # e.g. "ZTF10Bb" or "2025 HK53"
-    source: str                     # adapter that produced this ("neocp", "scout", …)
+    # Identity
+    designation: str
+    source: str
     source_url: Optional[str] = None
 
-    # ── Sky position (current / predicted) ────────────────────────────
-    ra_deg: Optional[float] = None  # right ascension  [0, 360)
-    dec_deg: Optional[float] = None # declination      [-90, 90]
+    # Classification (set by the class module / its ingestion handlers)
+    target_class: Optional[str] = None
+    catalogued: Optional[bool] = None
+    catalog_match: Optional[str] = None
+
+    # Sky position — best current estimate. Updated by core.position.extrapolate_to_now
+    # at request time when a motion vector is known.
+    ra_deg: Optional[float] = None
+    dec_deg: Optional[float] = None
     epoch: Optional[datetime] = None
+    observed_at: Optional[datetime] = None
 
-    # ── Brightness ────────────────────────────────────────────────────
-    mag_v: Optional[float] = None   # predicted apparent visual magnitude
-    mag_h: Optional[float] = None   # absolute magnitude (size proxy)
+    # Brightness
+    mag_v: Optional[float] = None
+    mag_h: Optional[float] = None
 
-    # ── Orbit quality ─────────────────────────────────────────────────
-    n_obs: int = 0                  # number of observations so far
-    arc_days: float = 0.0           # observational arc (days)
-    not_seen_days: float = 0.0      # days since last observation
+    # Orbit-quality context (when supplied by the source)
+    n_obs: int = 0
+    arc_days: float = 0.0
+    not_seen_days: float = 0.0
 
-    # ── Scoring (filled by enrichment / cross-reference) ──────────────
-    neo_score: Optional[float] = None   # 0–100  probability of being a real NEO
-    pha_score: Optional[float] = None   # potentially hazardous asteroid score
-    impact_prob: Optional[float] = None # Earth impact probability
+    # Hazard scoring (NEO-specific, set by Scout/Sentry enrichment)
+    neo_score: Optional[float] = None
+    pha_score: Optional[float] = None
+    impact_prob: Optional[float] = None
 
-    # ── Observability (filled by observability engine) ────────────────
+    # Motion vector (when known)
+    motion_rate_arcsec_min: Optional[float] = None
+    motion_pa_deg: Optional[float] = None
+
+    # Observability — filled at request time by core.observability.filter_observable
     observable: Optional[bool] = None
     obs_window_start: Optional[datetime] = None
     obs_window_end: Optional[datetime] = None
@@ -47,50 +58,26 @@ class Target:
     moon_sep_deg: Optional[float] = None
     transit_time: Optional[datetime] = None
 
-    # ── Ephemeris (filled by ephemeris engine) ─────────────────────────
-    predicted_ra_deg: Optional[float] = None
-    predicted_dec_deg: Optional[float] = None
-    predicted_epoch: Optional[datetime] = None
-    motion_rate_arcsec_min: Optional[float] = None
-    motion_pa_deg: Optional[float] = None
-    predicted_mag: Optional[float] = None
-
-    # ── Streaking (filled post-ephemeris) ──────────────────────────────
-    max_exposure_sec: Optional[float] = None
-
-    # ── Priority (filled by scorer) ───────────────────────────────────
-    priority_score: Optional[float] = None
-
-    # ── Metadata ──────────────────────────────────────────────────────
+    # Metadata
     updated_at: Optional[datetime] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
-    # ── Helpers ───────────────────────────────────────────────────────
-
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize to a JSON-friendly dict."""
-        d: Dict[str, Any] = {}
+        """Serialize to a JSON-friendly dict (drops the raw payload)."""
+        out: Dict[str, Any] = {}
         for k, v in self.__dict__.items():
             if k == "raw":
-                continue  # skip bulky raw payload by default
-            if isinstance(v, datetime):
-                d[k] = v.isoformat()
-            else:
-                d[k] = v
-        return d
+                continue
+            out[k] = v.isoformat() if isinstance(v, datetime) else v
+        return out
 
     def merge(self, other: "Target") -> None:
-        """
-        Merge scoring / enrichment data from *other* into this target.
-
-        Used when the same object appears in multiple sources (e.g. NEOCP
-        and Scout).  Non-None values in *other* overwrite None values here;
-        lists are concatenated.
-        """
+        """Merge enrichment data from another Target (same designation, different source)."""
         for attr in (
             "neo_score", "pha_score", "impact_prob",
             "mag_v", "mag_h",
             "motion_rate_arcsec_min", "motion_pa_deg",
+            "catalog_match",
         ):
             other_val = getattr(other, attr, None)
             if other_val is not None and getattr(self, attr, None) is None:
@@ -101,7 +88,5 @@ class Target:
             if other_val and not getattr(self, attr, None):
                 setattr(self, attr, other_val)
 
-        # Always take the richer raw payload
         if other.raw:
             self.raw.setdefault("_enrichment", {})[other.source] = other.raw
-

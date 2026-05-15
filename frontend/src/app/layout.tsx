@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+
+import Galaxy from "@/components/Galaxy";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NEO Target Planner",
-  description:
-    "Find tonight's observable Near-Earth Objects for your telescope. Open-source tool for observatories and citizen scientists.",
+  title: "Targets",
+  description: "Class-first follow-up target service.",
 };
 
 export default function RootLayout({
@@ -14,36 +15,34 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen antialiased">
-        <nav className="border-b border-gray-800 bg-[var(--bg-secondary)]">
+        <div className="fixed inset-0 -z-10">
+          <Galaxy
+            starSpeed={0.1}
+            rotationSpeed={0}
+            speed={0.1}
+            mouseInteraction={false}
+            twinkleIntensity={0.1}
+            density={1.7}
+            glowIntensity={0.2}
+            repulsionStrength={1}
+          />
+        </div>
+        <nav className="border-b border-white/10 bg-black/40 backdrop-blur">
           <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-              <span className="text-[var(--accent)]">NEO</span>
-              <span>Target Planner</span>
+            <Link href="/" className="font-semibold tracking-wide">
+              Targets
             </Link>
-            <div className="flex items-center gap-6 text-sm">
-              <Link
-                href="/"
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                Targets
+            <div className="flex items-center gap-6 text-sm text-white/70">
+              <Link href="/" className="hover:text-white transition-colors">
+                Find
               </Link>
-              <Link
-                href="/docs"
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
+              <Link href="/docs" className="hover:text-white transition-colors">
                 Docs
               </Link>
-              <a
-                href="https://github.com/JacksonHolland/neo-planner"
-                target="_blank"
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                GitHub
-              </a>
             </div>
           </div>
         </nav>
-        {children}
+        <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
       </body>
     </html>
   );

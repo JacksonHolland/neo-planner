@@ -1,111 +1,76 @@
-"""
-FastAPI application — NEO Follow-Up Target Planner API.
+"""FastAPI entry point for the follow-up target platform.
 
-Aggregates alerts from multiple sources, filters for observability,
-and serves ranked targets to telescopes and citizen scientists.
+On startup, imports the ``classes`` package (which registers every class
+on import) and calls ``start_all()`` to boot each class's background source
+threads. All target data flows through the class registry; the router has
+two endpoints (``/classes`` and ``/classes/{name}/targets``).
 """
 
 from __future__ import annotations
 
-import sys
 import os
-import threading
-import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+import sys
 
-# Ensure project root is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.config import HOST, PORT, NEOCP_POLL_SECONDS
-from api.models import HealthResponse
-from api.routers import targets, sources
-
-from core.target import Target
-from sources.neocp import NEOCPAdapter
-from sources.scout import enrich_targets
-from sources.sentry import enrich_with_sentry
-
-# ── In-memory target cache ────────────────────────────────────────────
-_target_cache: Dict[str, Any] = {
-    "targets": [],
-    "last_refresh": None,
-}
-
-
-def _refresh_targets() -> None:
-    """Fetch from all sources, enrich, and update the cache."""
-    global _target_cache
-
-    adapter = NEOCPAdapter()
-    raw = adapter.fetch()
-    enriched = enrich_targets(raw)
-    enriched = enrich_with_sentry(enriched)
-
-    _target_cache["targets"] = enriched
-    _target_cache["last_refresh"] = datetime.now(timezone.utc).isoformat()
-    print(f"[refresh] {len(enriched)} targets loaded at {_target_cache['last_refresh']}")
-
-
-def _poll_loop() -> None:
-    """Background thread that refreshes sources periodically."""
-    while True:
-        time.sleep(NEOCP_POLL_SECONDS)
-        try:
-            _refresh_targets()
-        except Exception as exc:
-            print(f"[refresh] error: {exc}")
-
-
-# ── FastAPI app ───────────────────────────────────────────────────────
+from api.config import HOST, PORT
+from api.routers import classes as classes_router
+from classes import CLASSES, start_all
 
 app = FastAPI(
-    title="NEO Target Planner API",
+    title="Follow-up Target Platform",
     description=(
-        "Aggregates NEO alerts from MPC NEOCP, JPL Scout, and other sources. "
-        "Filters for observability from any telescope location. "
-        "Returns ranked follow-up targets in multiple formats."
+        "Class-first follow-up target service. Pick a target class "
+        "(NEO, Supernova, ...), filter by your location and telescope, "
+        "get a list of observable targets with source attribution."
     ),
-    version="0.2.0",
+    version="1.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # wide open for citizen scientists
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(targets.router)
-app.include_router(sources.router)
+app.include_router(classes_router.router)
 
 
 @app.on_event("startup")
-def startup():
-    _refresh_targets()
-    t = threading.Thread(target=_poll_loop, daemon=True)
-    t.start()
-    print(f"[startup] Background polling every {NEOCP_POLL_SECONDS}s")
+def startup() -> None:
+    start_all()
+    print(f"[startup] registered classes: {list(CLASSES.keys())}")
 
 
 @app.get("/", tags=["health"])
 def root():
-    return {"message": "NEO Target Planner API", "docs": "/docs"}
+    return {
+        "service": "follow-up target platform",
+        "classes": list(CLASSES.keys()),
+        "docs": "/docs",
+    }
 
 
-@app.get("/health", response_model=HealthResponse, tags=["health"])
+@app.get("/health", tags=["health"])
 def health():
-    return HealthResponse(
-        status="ok",
-        sources={"neocp": len([t for t in _target_cache["targets"] if t.source == "neocp"])},
-        last_refresh=_target_cache.get("last_refresh"),
-    )
+    return {
+        "status": "ok",
+        "classes": {
+            name: {
+                "cached_targets": len(c.get_targets()),
+                "sources": c.sources,
+            }
+            for name, c in CLASSES.items()
+        },
+    }
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("api.main:app", host=HOST, port=PORT, reload=True)

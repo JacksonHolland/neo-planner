@@ -9,8 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY core/ core/
 COPY sources/ sources/
+COPY classes/ classes/
 COPY api/ api/
-COPY format_converter.py .
 
 EXPOSE 8000
 

@@ -1,452 +1,147 @@
-# NEO Follow-Up Target Planner — Architecture
+# Follow-up Target Platform — Architecture
 
-## Mission
+## What it is
 
-An open-source platform that bridges the gap between **alert sources**
-(MPC, JPL, Rubin brokers, ZTF, ATLAS, and any future survey) and
-**follow-up telescopes** (professional observatories like MIT's Wallace,
-research networks like Haystack, and citizen scientists with backyard
-scopes).
+A class-first follow-up target service. Users pick a target class (NEO,
+Supernova, …), filter by their location and telescope, and get a list of
+observable targets with source attribution and catalog status. The same
+shape is served by the REST API and the web UI; telescope automation can
+poll the API directly.
 
-The platform aggregates alerts from multiple sources, deduplicates them,
-filters for observability from a given telescope, ranks by scientific
-priority, and exports in the format the telescope needs.
+It is not tied to any single alert source or telescope. Adding a new class
+is one self-contained file under `classes/`. Adding a new data source is
+a utility function under `sources/` that any class can use.
 
-**It is not tied to any single alert source or telescope.**
-
-## Why this matters
-
-Today, if you run a small observatory and want to do NEO follow-up, you
-have to manually check the NEOCP, cross-reference Scout, calculate
-whether objects are observable from your site, check brightness limits,
-and convert formats. There is no unified, open tool that does this.
-
-This platform answers one question: **"What should my telescope observe
-tonight?"**
-
-## Context
-
-- **MIT Planetary Defense Network**: WAO + Haystack 37m + partner telescopes
-- **Principal contacts**: Rich (faculty), Saverio (research scientist,
-  planetary defense lead), Tim & Mike (Wallace staff)
-- **Jackson's background**: Course 8, determined orbital parameters of
-  NEOs using Wallace data (12.410)
-- **First telescope**: Wallace Astrophysical Observatory (WAO), but the
-  system generalizes to any observatory or citizen scientist
-
----
-
-## Architecture Overview
+## High-level flow
 
 ```
-  Alert Sources               Core Platform                  Outputs
-  (pluggable)                 (source-agnostic)              (telescope-agnostic)
-  ─────────────               ─────────────────              ────────────────────
-
-  ┌─────────────┐
-  │ MPC NEOCP   │──┐
-  └─────────────┘  │
-  ┌─────────────┐  │       ┌─────────────────────┐
-  │ JPL Scout   │──┤       │                     │       ┌──────────────┐
-  └─────────────┘  │       │   Ingestion Layer    │       │ REST API     │
-  ┌─────────────┐  ├──────>│   (normalize)        │       │ (Railway)    │
-  │ JPL Sentry  │──┤       │         │            │       └──────┬───────┘
-  └─────────────┘  │       │   Deduplication      │              │
-  ┌─────────────┐  │       │         │            │       ┌──────┴───────┐
-  │ Fink        │──┤       │   Filter Engine      │──────>│ CLI Tool     │
-  │ (Rubin/ZTF) │  │       │   (telescope profile │       │ (pip install)│
-  └─────────────┘  │       │    as parameter)     │       └──────┬───────┘
-  ┌─────────────┐  │       │         │            │              │
-  │ ANTARES     │──┤       │   Priority Scorer    │       ┌──────┴───────┐
-  └─────────────┘  │       │         │            │       │ Web UI       │
-  ┌─────────────┐  │       │   Format Converter   │──────>│ (Vercel)     │
-  │ ALeRCE      │──┘       │                     │       └──────────────┘
-  └─────────────┘          └─────────────────────┘
-  ┌─────────────┐
-  │ Future:     │
-  │ ATLAS, CSS, │──── (add new sources by writing an adapter)
-  │ Lasair, ... │
-  └─────────────┘
+[Source utilities]            [Class modules]           [API]              [UI]
+sources/fink_lsst.py   ─┐
+sources/fink_ztf.py    ─┤
+sources/neocp.py       ─┼──>  classes/neo.py        ─┐
+sources/scout.py       ─┘     classes/supernova.py  ─┼──>  /classes        web page
+sources/sentry.py             …                      │     /classes/{n}    docs page
+                                                     │     /classes/{n}/targets
+                                                     │     /health
 ```
 
----
+Each class module:
 
-## Alert Sources (Input Layer)
+1. Defines its filter Pydantic model (the API and UI both use this schema).
+2. Owns a thread-safe in-memory cache of `Target`s.
+3. Launches background ingestion threads (Kafka consumers, NEOCP poller, etc.).
+4. Tags every cached target with `target_class`, `catalogued`, `catalog_match`.
+5. Implements its own `apply_filters(targets, filters)`.
+6. Registers itself in `classes.CLASSES`.
 
-Each alert source is a **plugin adapter** that normalizes raw data into
-a common `Target` schema. Adding a new source means writing one adapter
-class — the rest of the platform doesn't change.
+The API endpoint reads the cache, applies the class's filters, runs the
+generic observability engine, linearly extrapolates moving-object positions
+to "now", and returns the top N.
 
-### Common Target Schema
+## Project layout
 
-Every adapter produces objects in this normalized form:
+```
+core/
+  target.py            Target dataclass
+  position.py          extrapolate_to_now() linear motion extrapolation
+  observability.py     above-horizon / dark / moon / HA / Az / altitude filter
+  telescope.py         TelescopeProfile dataclass
+classes/
+  base.py              TargetClass dataclass
+  __init__.py          CLASSES registry + start_all()
+  neo.py               Near-Earth Objects (one file: filters + cache + handlers)
+  supernova.py         Supernovae (same shape)
+sources/
+  fink_lsst.py         start_fink_lsst_consumer() utility
+  fink_ztf.py          start_fink_ztf_consumer() utility
+  neocp.py             NEOCPAdapter (HTTP polling)
+  scout.py             ScoutAdapter + enrich_targets()
+  sentry.py            SentryAdapter + enrich_with_sentry()
+api/
+  main.py              FastAPI app, /health, /, startup hook
+  models.py            TargetResponse, TargetsResponse, ClassResponse
+  config.py            HOST / PORT
+  routers/classes.py   /classes router (the only one)
+frontend/src/
+  app/layout.tsx       Galaxy background + minimal nav
+  app/page.tsx         Single page: class picker, filter form, results table
+  app/docs/page.tsx    Auto-generated from /classes
+  components/Galaxy.tsx  React Bits Galaxy (WebGL via ogl)
+```
+
+## The class abstraction
 
 ```python
 @dataclass
-class Target:
-    # Identity
-    designation: str          # e.g., "ZTF10Bb" or "2025 HK53"
-    source: str               # e.g., "neocp", "scout", "fink"
-    source_url: str           # link back to original
-
-    # Sky position (current / predicted)
-    ra_deg: float             # right ascension, degrees
-    dec_deg: float            # declination, degrees
-    epoch: datetime           # when this position is valid
-
-    # Brightness
-    mag_v: float | None       # predicted visual magnitude
-    mag_h: float | None       # absolute magnitude (size proxy)
-
-    # Orbit quality
-    n_obs: int                # observations so far
-    arc_days: float           # observational arc length
-    not_seen_days: float      # days since last observation
-
-    # Scoring
-    neo_score: float | None   # 0-100, probability of being a real NEO
-    pha_score: float | None   # potentially hazardous asteroid score
-    impact_prob: float | None # Earth impact probability (from Sentry)
-
-    # Metadata
-    updated_at: datetime
-    raw: dict                 # original payload for debugging
+class TargetClass:
+    name: str                            # url slug, e.g. "neo"
+    label: str
+    description: str                     # surfaced in /classes and the docs page
+    canonical_catalog: str               # "MPC", "TNS", "none"
+    filter_model: type[BaseModel]        # Pydantic model for query params
+    sources: list[str]                   # adapter names for transparency
+    get_targets: Callable[[], list[Target]]
+    apply_filters: Callable[[list[Target], BaseModel], list[Target]]
 ```
 
-### Source Adapters
-
-#### Tier 1 — Ready now, no auth, proven APIs
-
-| Source | URL | Data | Polling |
-|--------|-----|------|---------|
-| **MPC NEOCP** | `minorplanetcenter.net/Extended_Files/neocp.json` | ~50-100 unconfirmed NEO candidates | Every 5-15 min |
-| **JPL Scout** | `ssd-api.jpl.nasa.gov/scout.api` | Same objects + hazard scoring | Every 15 min |
-| **JPL Sentry** | `ssd-api.jpl.nasa.gov/sentry.api` | ~2,000 objects with impact probability | Every few hours |
-
-These three sources are complementary:
-- **NEOCP** = "here are objects that need follow-up"
-- **Scout** = "here's how dangerous they are"
-- **Sentry** = "here are objects with non-zero impact probability"
-
-Cross-referencing them gives you a prioritized target list. All three
-are free, unauthenticated JSON APIs tested and working in our codebase.
-
-#### Tier 2 — Requires registration, adds Rubin/ZTF coverage
-
-| Source | URL | Data | Access |
-|--------|-----|------|--------|
-| **Fink** | fink-portal.org | Rubin + ZTF alerts, solar system classification | `fink-client` (Kafka) or REST API, register with team |
-| **ANTARES** | antares.noirlab.edu | Rubin + ZTF alerts, general classification | Web portal + API, register |
-| **ALeRCE** | alerce.online | ZTF alerts, stamp classifier for asteroids | REST API at api.alerce.online, register |
-
-These brokers add real-time detections from Rubin and ZTF that haven't
-yet made it to the NEOCP. Fink has the best solar system classification.
-
-The official Rubin community broker list (7 full-stream brokers):
-ALeRCE, AMPEL, ANTARES, Babamul, Fink, Lasair, Pitt-Google.
-
-#### Tier 3 — Additional surveys (future adapters)
-
-| Source | What it adds |
-|--------|-------------|
-| **ATLAS** | All-sky survey, fast NEO discovery |
-| **CSS/Catalina** | Long-running NEO survey |
-| **Rubin RSP** (direct) | SSObject/SSSource catalog via TAP (needs auth token) |
-| **b612 MPC exports** | Historical batch data (already built in current codebase) |
-
-Adding any of these is just writing a new adapter that normalizes to
-the `Target` schema.
-
----
-
-## Filter Engine (Core Logic)
-
-The filter engine is the heart of the platform. It takes a list of
-`Target` objects and a `TelescopeProfile`, and returns a ranked list of
-what to observe tonight.
-
-### Telescope Profile
-
-```json
-{
-  "name": "Wallace Astrophysical Observatory",
-  "code": null,
-  "lat": 42.6097,
-  "lon": -71.4844,
-  "alt_m": 180,
-  "aperture_m": 0.6,
-  "limiting_mag": 19.5,
-  "fov_arcmin": 20,
-  "min_altitude_deg": 20,
-  "max_sun_alt_deg": -18,
-  "min_moon_sep_deg": 30
-}
-```
-
-Any observatory or citizen scientist provides their own profile.
-The rest of the system adapts automatically.
-
-### Filter Pipeline
-
-```
-  Raw targets from all sources
-          │
-          ▼
-  ┌──────────────────┐
-  │ 1. Deduplicate    │  Same object from NEOCP + Scout + Fink
-  │    (merge scores) │  → merge into single target with combined info
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ 2. Brightness     │  Drop objects fainter than telescope's
-  │    filter         │  limiting magnitude
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ 3. Observability  │  Is it above min altitude tonight?
-  │    calculator     │  Is it dark enough? Moon far enough?
-  │                   │  What's the observable window?
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ 4. Priority       │  Score by: urgency (not_seen_days),
-  │    scorer         │  orbit uncertainty (arc), hazard score,
-  │                   │  observable window length, user weights
-  └────────┬─────────┘
-           │
-           ▼
-  Ranked target list for tonight
-```
-
-### Filter Details
-
-1. **Deduplication** — The same object often appears in NEOCP, Scout,
-   and a broker alert under different designations. Match by position
-   (cone search) and cross-reference designations. Merge scoring data
-   from all sources into a single enriched target.
-
-2. **Brightness filter** — Compare predicted magnitude against the
-   telescope's `limiting_mag`. No point sending a mag 23 target to a
-   telescope that can only see to mag 19.
-
-3. **Observability calculator** — Given the telescope's lat/lon and the
-   target's RA/Dec, compute:
-   - Rise/set times and transit time
-   - Altitude and airmass over the night
-   - Observable window (when altitude > `min_altitude_deg` and sun
-     below `max_sun_alt_deg`)
-   - Moon separation (reject if too close)
-   - Libraries: `astropy`, `astroplan`
-
-4. **Priority scorer** — Rank targets by scientific value. Default
-   scoring weights (user-configurable):
-   - `not_seen_days` — more urgent if not observed recently
-   - `arc_days` (inverse) — short arc = uncertain orbit = high value
-   - `neo_score` — higher = more likely a real NEO
-   - `pha_score` — potentially hazardous = high priority
-   - `impact_prob` — non-zero impact probability = highest priority
-   - `observable_hours` — prefer objects with longer windows tonight
-   - Users can define custom weight profiles for their science goals
-
-### Key Libraries
-
-- `astropy` — coordinate transforms, time handling
-- `astroplan` — observability calculations (altitude, airmass, moon)
-- `astroquery` — query JPL Horizons for ephemerides if needed
-
----
-
-## Output Layer
-
-### 1. REST API (for telescope control systems and integrations)
-
-Hosted on Railway. Endpoints:
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/targets/tonight?lat=X&lon=Y&mag_limit=Z` | Tonight's ranked targets for a location |
-| GET | `/targets/{designation}` | Detail + observability for one object |
-| GET | `/targets/export?format=mpc80` | Export targets in MPC 80-col, ADES, CSV, JSON |
-| GET | `/sources/neocp` | Raw NEOCP feed (cached, normalized) |
-| GET | `/sources/scout` | Raw Scout feed (cached, normalized) |
-| GET | `/sources/sentry` | Raw Sentry feed (cached, normalized) |
-| POST | `/telescopes` | Register a telescope profile |
-| GET | `/telescopes/{id}/tonight` | Tonight's targets for a registered telescope |
-| GET | `/health` | System status, source freshness |
-
-### 2. CLI Tool (for citizen scientists and scripting)
-
-```bash
-pip install neo-planner    # (working name)
-
-# What should I observe tonight from my location?
-neo-planner tonight --lat 42.6 --lon -71.5 --aperture 0.3 --mag-limit 18
-
-# Export NEOCP targets brighter than mag 20 in MPC format
-neo-planner export --format mpc80 --mag-max 20 --score-min 80
-
-# Show details for a specific object
-neo-planner target ZTF10Bb --lat 42.6 --lon -71.5
-```
-
-### 3. Web UI (Vercel, future)
-
-Simple interface: enter your location + telescope specs, see tonight's
-NEO targets on a sky map with priority scores and observable windows.
-
----
-
-## What We've Already Built (v0)
-
-The current codebase was built around b612 batch exports. Here's what
-carries forward and what gets replaced:
-
-| File | Purpose | Status |
-|------|---------|--------|
-| `explore.py` | Download + profile Rubin MPC data | Keep as dev tool |
-| `sync_data.py` | Sync daily partitions from GCS | Keep for batch/historical use |
-| `target_selector.py` | Filter for NEOs by designation | **Refactor** — replace designation matching with live source ingestion |
-| `format_converter.py` | MPC 80-col, ADES PSV/XML, JSON | **Keep as-is** — directly reusable |
-| `api/` | FastAPI backend | **Refactor** — new routes, same skeleton |
-| `api/models.py` | Pydantic schemas | **Refactor** — update to new Target schema |
-| `api/config.py` | Settings | **Keep** |
-| `Dockerfile`, `railway.toml` | Deployment | **Keep as-is** |
-
-### New modules to build
-
-| Module | Purpose |
-|--------|---------|
-| `sources/` | Adapter plugins for each alert source |
-| `sources/neocp.py` | NEOCP adapter (poll + normalize) |
-| `sources/scout.py` | Scout adapter (poll + normalize) |
-| `sources/sentry.py` | Sentry adapter (poll + normalize) |
-| `sources/fink.py` | Fink broker adapter (future) |
-| `core/target.py` | Common Target dataclass |
-| `core/telescope.py` | TelescopeProfile dataclass |
-| `core/dedup.py` | Cross-source deduplication |
-| `core/observability.py` | Observability calculator (astropy/astroplan) |
-| `core/scorer.py` | Priority scoring engine |
-| `api/routers/targets.py` | New target endpoints (tonight, export, detail) |
-| `api/routers/sources.py` | Raw source feed endpoints |
-
----
-
-## Development Phases
-
-### Phase 1 — Source adapters + common schema
-Build NEOCP, Scout, and Sentry adapters. Define the common Target
-schema. Verify we can poll all three and normalize into the same format.
-All three are free, no auth, already tested.
-
-### Phase 2 — Observability engine
-Build the observability calculator using astropy/astroplan. Given a
-TelescopeProfile and a Target, compute tonight's observable window.
-This is where the physics lives.
-
-### Phase 3 — Deduplication + priority scoring
-Cross-reference targets across sources. Score and rank by urgency,
-orbit uncertainty, hazard level, and observable window.
-
-### Phase 4 — API
-Refactor FastAPI backend for the new architecture. Key endpoint:
-`GET /targets/tonight?lat=X&lon=Y&mag_limit=Z` returns ranked targets.
-
-### Phase 5 — Format export
-Wire up the existing format converter (MPC 80-col, ADES XML/PSV) to
-the new target pipeline. Add any WAO-specific export formats.
-
-### Phase 6 — CLI tool
-pip-installable CLI that wraps the core logic. No server needed —
-runs locally, pulls from sources directly.
-
-### Phase 7 — Web UI
-Vercel frontend. Sky map, target list, observable window visualization.
-
-### Phase 8 — Broker integration
-Add Fink, ANTARES, ALeRCE adapters for real-time Rubin/ZTF alerts.
-These are additive — the rest of the platform doesn't change.
-
----
-
-## Known Limitations
-
-Issues identified during audit that should be addressed in future work.
-
-### 1. Dark window scan clips observability at extreme longitudes
-
-**File:** `core/observability.py`, `_dark_window()`
-
-**What it affects:** Observers west of ~UTC-7 (Pacific US, Hawaii, East Asia, Australia) may have their observable window truncated by 1-2+ hours.
-
-**Details:** The dark window scan is anchored at 12:00 UTC and runs for exactly 24 hours (96 steps x 15 min). For observers whose astronomical darkness extends past ~11:45 UTC the following day (western longitudes) or begins before 12:00 UTC (far-eastern longitudes), the scan misses part of the night. For example, a Pacific US observer in March loses ~1.25 hours of late-night darkness; a Japanese observer loses ~2.5 hours of early-evening darkness.
-
-**Fix:** Offset the scan start by the observer's longitude to center on their local midnight. For example: `base_utc_hour = 12 - (profile.lon / 15)`, then scan 30 hours forward to guarantee full coverage regardless of timezone and season.
-
-### 2. Ephemeris queries fail silently for most NEOCP candidates
-
-**File:** `core/ephemeris.py`
-
-**What it affects:** Predicted positions, motion rates, and position angles are unavailable for most targets. Finder charts lack motion vectors. The trailing filter is bypassed (targets pass through unfiltered).
-
-**Details:** NEOCP candidates carry temporary designations (e.g., "ZTF10Bb") that JPL Horizons typically does not recognize until the object receives enough observations for a formal designation. The code correctly falls back to the NEOCP-provided RA/Dec, but this is a snapshot position that is not propagated forward to the observation time. For fast-moving NEOs (several arcmin/min), the position can drift significantly between the NEOCP epoch and the actual observation.
-
-**Fix:** Use the Scout API's ephemeris endpoint (`?tdes=DESIG&eph-start=...`) which can compute ephemerides for NEOCP candidates that Horizons cannot. Alternatively, integrate Find_Orb for local orbit determination once sufficient astrometry is available.
-
-### 3. Sentry enrichment rarely matches NEOCP targets
-
-**File:** `sources/sentry.py`, `enrich_with_sentry()`
-
-**What it affects:** The `impact_prob` field remains null for virtually all NEOCP targets, so impact probability has no effect on scoring.
-
-**Details:** JPL Sentry tracks ~2,000 objects with non-zero Earth impact probability, but uses permanent/provisional designations (e.g., "2024 YR4"). NEOCP candidates use temporary designations (e.g., "P11yMaG"). The designation-based matching in `enrich_with_sentry()` almost never finds a match. This is a fundamental namespace mismatch, not a code bug.
-
-**Fix:** Add a positional cross-match (cone search) as a fallback when designation matching fails. A radius of ~1 arcmin should catch most cases while avoiding false positives.
-
-### 4. Finder chart cache grows without bound
-
-**File:** `core/finder.py`
-
-**What it affects:** Memory usage on long-running server instances grows monotonically as unique finder charts are generated.
-
-**Details:** The module-level `_finder_cache` dict stores every SVG ever generated and never evicts entries. On a server running for days or weeks, this is a slow memory leak.
-
-**Fix:** Replace the plain dict with `functools.lru_cache` or a bounded dict (e.g., `collections.OrderedDict` with a max size) to cap memory usage.
-
-### 5. No thread safety on target cache
-
-**File:** `api/main.py`
-
-**What it affects:** Under heavy concurrent load, a request handler could theoretically read a partially-updated cache during a background refresh.
-
-**Details:** The background polling thread writes to `_target_cache` while request handlers read from it with no lock. CPython's GIL makes this extremely unlikely to cause a crash, but it is not formally safe.
-
-**Fix:** Use `threading.Lock` around cache reads and writes, or swap to an atomic replacement pattern (build a new dict, then assign the reference in one operation).
-
-### 6. Pydantic v1 `__fields__` deprecation
-
-**File:** `api/routers/targets.py`, line 38
-
-**What it affects:** Will emit a deprecation warning under Pydantic v2 and will break if Pydantic v3 removes it.
-
-**Details:** `TargetResponse.__fields__` is Pydantic v1 syntax. The v2 equivalent is `TargetResponse.model_fields`.
-
-**Fix:** Replace `__fields__` with `model_fields` when upgrading to Pydantic v2+.
-
----
-
-## Open Questions (for meeting with Rich, Saverio, Tim, Mike)
-
-1. What is WAO's limiting magnitude? (Determines brightness cutoff)
-2. What format does WAO's telescope control system accept for pointing?
-3. What is the desired latency? (Minutes? Hours? Next-day?)
-4. Should we prioritize NEOCP follow-up or new Rubin discoveries?
-5. What's the submission format for sending WAO observations back to MPC?
-6. Does MIT have existing Rubin data rights or broker access?
-7. Is there an existing WAO observation planning workflow to integrate with?
-8. Are there other telescopes in the Planetary Defense Network to
-   onboard as additional telescope profiles?
-9. What are the priority scoring weights that make sense for WAO's
-   science goals? (e.g., favor short-arc objects? favor PHAs?)
+Eight fields, two callables. Anything more would be fluff.
+
+## API
+
+| Endpoint | Returns |
+|---|---|
+| `GET /classes` | All registered classes including their filter JSON schemas |
+| `GET /classes/{name}` | One class with the full filter schema |
+| `GET /classes/{name}/targets?lat=&lon=&…` | Observable targets for that class |
+| `GET /health` | Per-class cache counts |
+
+All filter fields are class-defined. The endpoint introspects the class's
+Pydantic `filter_model` to validate query params; the UI introspects
+`filters_schema` (from `model_json_schema()`) to render the form. One source
+of truth.
+
+## Positions
+
+Each target carries its best current position (`ra_deg`, `dec_deg`, `epoch`)
+plus the original measurement time (`observed_at`) and motion vector
+(`motion_rate_arcsec_min`, `motion_pa_deg`) when known.
+
+At request time, `core.position.extrapolate_to_now()` updates `ra_deg`/
+`dec_deg`/`epoch` for moving targets using simple linear extrapolation. The
+observer sees both the extrapolated position and the inputs that produced
+it, so they can apply their own uncertainty model.
+
+There is no quantitative position warning. There are no background sweepers.
+
+## Adding a new class
+
+Create one file: `classes/<name>.py`. Pattern:
+
+1. `class <Name>Filters(BaseModel)` — the filter schema.
+2. `_cache: list[Target] = []`, `_lock = threading.Lock()`.
+3. Per-source `_on_<source>_alert(alert) -> Optional[Target]` handlers.
+4. `apply_filters(targets, filters) -> list[Target]`.
+5. `get_targets() -> list[Target]`.
+6. `start()` — spin up ingestion threads.
+7. `TARGET_CLASS = TargetClass(...)` and `CLASSES[name] = TARGET_CLASS`.
+8. Add `<name>.start()` to `classes/__init__.py:start_all()`.
+
+That's it. No router changes, no UI changes, no schema changes. The UI and
+docs auto-discover the new class from `/classes`.
+
+## Deployment
+
+Single FastAPI process. Each class's ingestion threads (and one daemon per
+Fink consumer) live inside the same process. Memory: a few MB per class
+under current alert rates. Restart drops the cache (Fink re-emits on
+reconnect; NEOCP refresh repopulates within 5 minutes).
+
+Env vars (all optional with sensible defaults):
+
+- `HOST`, `PORT`
+- `NEOCP_POLL_SECONDS` (default 300)
+- `FINK_LSST_SERVER`, `FINK_LSST_GROUP_ID`
+- `FINK_ZTF_SERVER`, `FINK_ZTF_GROUP_ID`
+- `FINK_POLL_TIMEOUT`
+- `NEO_FINK_LSST_TOPICS`, `NEO_FINK_ZTF_TOPICS`
+- `SUPERNOVA_FINK_LSST_TOPICS`, `SUPERNOVA_FINK_ZTF_TOPICS`

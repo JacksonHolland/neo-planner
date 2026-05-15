@@ -1,20 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-interface Target {
+type JSONSchemaField = {
+  type?: string;
+  title?: string;
+  description?: string;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  anyOf?: { type: string }[];
+};
+
+type JSONSchema = {
+  title?: string;
+  properties?: Record<string, JSONSchemaField>;
+  required?: string[];
+};
+
+type ClassInfo = {
+  name: string;
+  label: string;
+  description: string;
+  canonical_catalog: string;
+  sources: string[];
+  filters_schema: JSONSchema;
+};
+
+type Target = {
   designation: string;
   source: string;
+  source_url: string | null;
+  target_class: string | null;
+  catalogued: boolean | null;
+  catalog_match: string | null;
   ra_deg: number | null;
   dec_deg: number | null;
+  epoch: string | null;
+  observed_at: string | null;
+  motion_rate_arcsec_min: number | null;
+  motion_pa_deg: number | null;
   mag_v: number | null;
   mag_h: number | null;
   n_obs: number;
   arc_days: number;
-  not_seen_days: number;
   neo_score: number | null;
   pha_score: number | null;
   impact_prob: number | null;
@@ -24,495 +56,238 @@ interface Target {
   obs_window_hours: number | null;
   best_altitude_deg: number | null;
   best_airmass: number | null;
-  best_az_deg: number | null;
-  best_ha_hours: number | null;
   moon_sep_deg: number | null;
-  transit_time: string | null;
-  predicted_ra_deg: number | null;
-  predicted_dec_deg: number | null;
-  predicted_epoch: string | null;
-  motion_rate_arcsec_min: number | null;
-  motion_pa_deg: number | null;
-  predicted_mag: number | null;
-  max_exposure_sec: number | null;
-  priority_score: number | null;
-  source_url: string | null;
+};
+
+type TargetsResponse = { total: number; class_name: string; targets: Target[] };
+
+function fieldUnderlyingType(f: JSONSchemaField): string {
+  if (f.type) return f.type;
+  if (f.anyOf) {
+    const nonNull = f.anyOf.find((a) => a.type && a.type !== "null");
+    if (nonNull?.type) return nonNull.type;
+  }
+  return "string";
 }
 
-interface TonightResponse {
-  total: number;
-  telescope: Record<string, unknown>;
-  targets: Target[];
+function inputForField(
+  fieldName: string,
+  field: JSONSchemaField,
+  value: string,
+  onChange: (v: string) => void,
+) {
+  const type = fieldUnderlyingType(field);
+  if (type === "boolean") {
+    return (
+      <select
+        className="w-full bg-black/40 border border-white/15 rounded px-2 py-1.5 text-sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">any</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    );
+  }
+  return (
+    <input
+      className="w-full bg-black/40 border border-white/15 rounded px-2 py-1.5 text-sm"
+      type={type === "integer" || type === "number" ? "number" : "text"}
+      step={type === "number" ? "any" : undefined}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={field.default !== undefined ? String(field.default) : ""}
+    />
+  );
 }
 
-function degToHMS(deg: number): string {
+function deg2hms(deg: number): string {
   const h = deg / 15;
   const hh = Math.floor(h);
   const mm = Math.floor((h - hh) * 60);
   const ss = ((h - hh) * 60 - mm) * 60;
-  return `${hh.toString().padStart(2, "0")}h ${mm
-    .toString()
-    .padStart(2, "0")}m ${ss.toFixed(1).padStart(4, "0")}s`;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${ss.toFixed(1).padStart(4, "0")}`;
 }
 
-function degToDMS(deg: number): string {
-  const sign = deg >= 0 ? "+" : "-";
-  const abs = Math.abs(deg);
-  const dd = Math.floor(abs);
-  const mm = Math.floor((abs - dd) * 60);
-  const ss = ((abs - dd) * 60 - mm) * 60;
-  return `${sign}${dd.toString().padStart(2, "0")}° ${mm
-    .toString()
-    .padStart(2, "0")}' ${ss.toFixed(1).padStart(4, "0")}"`;
+function deg2dms(deg: number): string {
+  const sign = deg < 0 ? "-" : "+";
+  const d = Math.abs(deg);
+  const dd = Math.floor(d);
+  const mm = Math.floor((d - dd) * 60);
+  const ss = ((d - dd) * 60 - mm) * 60;
+  return `${sign}${String(dd).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${ss.toFixed(1).padStart(4, "0")}`;
 }
 
-function formatUTC(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return (
-    d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "UTC",
-      hour12: false,
-    }) + " UTC"
-  );
-}
-
-function paToDirection(pa: number): string {
-  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  const idx = Math.round(pa / 45) % 8;
-  return dirs[idx];
-}
-
-export default function Home() {
-  const [lat, setLat] = useState("42.6138");
-  const [lon, setLon] = useState("-71.4889");
-  const [limitingMag, setLimitingMag] = useState("19.5");
-  const [minAlt, setMinAlt] = useState("20");
-  const [minHA, setMinHA] = useState("-6");
-  const [maxHA, setMaxHA] = useState("6");
-  const [minAz, setMinAz] = useState("0");
-  const [maxAz, setMaxAz] = useState("360");
-  const [plateScale, setPlateScale] = useState("2.0");
-  const [seeing, setSeeing] = useState("2.5");
-  const [maxTrail, setMaxTrail] = useState("2.5");
-  const [results, setResults] = useState<TonightResponse | null>(null);
+export default function HomePage() {
+  const [classes, setClasses] = useState<ClassInfo[]>([]);
+  const [selected, setSelected] = useState<string>("");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [response, setResponse] = useState<TargetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
-  async function fetchTargets() {
+  useEffect(() => {
+    fetch(`${API_BASE}/classes`)
+      .then((r) => r.json())
+      .then((data: ClassInfo[]) => {
+        setClasses(data);
+        if (data.length > 0) setSelected(data[0].name);
+      })
+      .catch((e) => setError(`Failed to load classes: ${e}`));
+  }, []);
+
+  const currentClass = useMemo(
+    () => classes.find((c) => c.name === selected),
+    [classes, selected],
+  );
+
+  useEffect(() => {
+    if (!currentClass) return;
+    const props = currentClass.filters_schema.properties || {};
+    const defaults: Record<string, string> = {};
+    for (const [k, f] of Object.entries(props)) {
+      if (f.default !== undefined && f.default !== null) defaults[k] = String(f.default);
+      else defaults[k] = "";
+    }
+    setValues(defaults);
+    setResponse(null);
+  }, [currentClass]);
+
+  const submit = useCallback(async () => {
+    if (!currentClass) return;
     setLoading(true);
     setError(null);
-    setExpanded(null);
     try {
-      const params = new URLSearchParams({
-        lat,
-        lon,
-        limiting_mag: limitingMag,
-        min_altitude_deg: minAlt,
-        min_ha_hours: minHA,
-        max_ha_hours: maxHA,
-        min_az_deg: minAz,
-        max_az_deg: maxAz,
-        plate_scale_arcsec: plateScale,
-        seeing_arcsec: seeing,
-        max_trail_arcsec: maxTrail,
-      });
-      const res = await fetch(`${API_BASE}/targets/tonight?${params}`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `API error ${res.status}`);
+      const params = new URLSearchParams();
+      for (const [k, v] of Object.entries(values)) {
+        if (v === "" || v === undefined || v === null) continue;
+        params.set(k, v);
       }
-      const data: TonightResponse = await res.json();
-      setResults(data);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const url = `${API_BASE}/classes/${currentClass.name}/targets?${params}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`${r.status} ${t}`);
+      }
+      const data: TargetsResponse = await r.json();
+      setResponse(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentClass, values]);
 
-  function useMyLocation() {
-    if (!navigator.geolocation) {
-      setError("Geolocation not supported by your browser");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude.toFixed(4));
-        setLon(pos.coords.longitude.toFixed(4));
-      },
-      () => setError("Could not get your location")
-    );
-  }
+  const props = currentClass?.filters_schema.properties || {};
+  const required = new Set(currentClass?.filters_schema.required || []);
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8">
-      <header className="mb-8 text-center">
-        <p className="text-[var(--text-secondary)] text-lg max-w-2xl mx-auto">
-          Find tonight&apos;s observable Near-Earth Objects for your telescope.
-          Enter your location and specs below.
-        </p>
-      </header>
-
-      {/* Input Form */}
-      <section className="bg-[var(--bg-card)] rounded-xl p-6 mb-8 border border-gray-700/50">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Latitude</label>
-            <input type="number" step="0.0001" value={lat} onChange={(e) => setLat(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Longitude</label>
-            <input type="number" step="0.0001" value={lon} onChange={(e) => setLon(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Limiting Magnitude</label>
-            <input type="number" step="0.1" value={limitingMag} onChange={(e) => setLimitingMag(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Min Altitude (&deg;)</label>
-            <input type="number" step="1" value={minAlt} onChange={(e) => setMinAlt(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Min HA (hours)</label>
-            <input type="number" step="0.5" value={minHA} onChange={(e) => setMinHA(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Max HA (hours)</label>
-            <input type="number" step="0.5" value={maxHA} onChange={(e) => setMaxHA(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Min Az (&deg;)</label>
-            <input type="number" step="1" value={minAz} onChange={(e) => setMinAz(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Max Az (&deg;)</label>
-            <input type="number" step="1" value={maxAz} onChange={(e) => setMaxAz(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Plate Scale (″/px)</label>
-            <input type="number" step="0.1" min="0.1" value={plateScale} onChange={(e) => setPlateScale(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">Seeing FWHM (″)</label>
-            <input type="number" step="0.1" min="0.1" value={seeing} onChange={(e) => setSeeing(e.target.value)}
-              className="w-full bg-[var(--bg-secondary)] border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--text-secondary)] mb-1">
-              Max Trail: {maxTrail}″
-            </label>
-            <input type="range" min="0.5" max="10" step="0.1" value={maxTrail}
-              onChange={(e) => setMaxTrail(e.target.value)}
-              className="w-full accent-[var(--accent)] mt-1" />
-            <div className="flex justify-between text-xs text-[var(--text-secondary)] mt-0.5">
-              <span>0.5″</span>
-              <span>10″</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={fetchTargets} disabled={loading}
-            className="bg-[var(--accent)] text-[var(--bg-primary)] font-semibold px-6 py-2 rounded-lg hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50">
-            {loading ? "Searching..." : "Find Targets"}
-          </button>
-          <button onClick={useMyLocation}
-            className="border border-gray-600 text-[var(--text-secondary)] px-4 py-2 rounded-lg hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors text-sm">
-            Use My Location
-          </button>
-        </div>
+    <div className="space-y-6">
+      <section className="flex flex-wrap items-center gap-3">
+        <label className="text-sm text-white/70">Class</label>
+        <select
+          className="bg-black/40 border border-white/15 rounded px-3 py-2 text-sm"
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+        >
+          {classes.map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        {currentClass && (
+          <span className="text-xs text-white/50">
+            canonical: {currentClass.canonical_catalog} · sources: {currentClass.sources.join(", ")}
+          </span>
+        )}
       </section>
 
-      {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 rounded-xl p-4 mb-6">{error}</div>
-      )}
-
-      {results && (
-        <section>
-          <h2 className="text-xl font-semibold mb-4">
-            {results.total === 0
-              ? "No observable targets tonight"
-              : `${results.total} target${results.total > 1 ? "s" : ""} observable tonight`}
-          </h2>
-          {results.total > 0 && (
-            <div className="space-y-3">
-              {results.targets.map((t) => (
-                <TargetCard key={t.designation} target={t} isExpanded={expanded === t.designation}
-                  onToggle={() => setExpanded(expanded === t.designation ? null : t.designation)} />
-              ))}
-            </div>
-          )}
+      {currentClass && (
+        <section className="rounded-lg border border-white/10 bg-black/30 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Object.entries(props).map(([k, f]) => (
+              <label key={k} className="text-xs text-white/70 flex flex-col gap-1">
+                <span className="flex items-center gap-1">
+                  {k}
+                  {required.has(k) && <span className="text-red-400">*</span>}
+                </span>
+                {inputForField(k, f, values[k] ?? "", (v) => setValues({ ...values, [k]: v }))}
+                {f.description && <span className="text-[10px] text-white/40">{f.description}</span>}
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={submit}
+              disabled={loading}
+              className="px-4 py-2 rounded bg-white text-black text-sm font-medium disabled:opacity-50"
+            >
+              {loading ? "Loading…" : "Find targets"}
+            </button>
+            {error && <span className="text-sm text-red-400">{error}</span>}
+          </div>
         </section>
       )}
 
-      <footer className="mt-16 pt-8 border-t border-gray-800 text-center text-sm text-[var(--text-secondary)]">
-        <p>
-          Data from{" "}
-          <a href="https://www.minorplanetcenter.net/iau/NEO/toconfirm_tabular.html" className="text-[var(--accent)] hover:underline" target="_blank">MPC NEOCP</a>,{" "}
-          <a href="https://cneos.jpl.nasa.gov/scout/" className="text-[var(--accent)] hover:underline" target="_blank">JPL Scout</a>{" "}
-          &amp;{" "}
-          <a href="https://cneos.jpl.nasa.gov/sentry/" className="text-[var(--accent)] hover:underline" target="_blank">JPL Sentry</a>.
-          Built at MIT for planetary defense.
-        </p>
-      </footer>
-    </main>
-  );
-}
-
-function TargetCard({ target: t, isExpanded, onToggle }: { target: Target; isExpanded: boolean; onToggle: () => void }) {
-  const finderUrl = `${API_BASE}/targets/${encodeURIComponent(t.designation)}/finder?fov=15`;
-
-  return (
-    <div className={`bg-[var(--bg-card)] border rounded-xl transition-colors ${isExpanded ? "border-[var(--accent)]/50" : "border-gray-700/50 hover:border-gray-600"}`}>
-      {/* Summary row */}
-      <button onClick={onToggle} className="w-full text-left p-5 flex items-center justify-between cursor-pointer">
-        <div className="flex items-center gap-6 flex-wrap">
-          <div>
-            <h3 className="text-lg font-semibold">{t.designation}</h3>
-            <span className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">{t.source}</span>
+      {response && (
+        <section className="rounded-lg border border-white/10 bg-black/30 overflow-hidden">
+          <div className="px-4 py-2 text-sm text-white/70 border-b border-white/10">
+            {response.total} target{response.total === 1 ? "" : "s"}
           </div>
-          <Stat label="Mag" value={t.mag_v?.toFixed(1) ?? "—"} />
-          <Stat label="Window" value={t.obs_window_hours ? `${t.obs_window_hours}h` : "—"} />
-          <Stat label="Best Alt" value={t.best_altitude_deg ? `${t.best_altitude_deg}°` : "—"} />
-          {t.motion_rate_arcsec_min != null && (
-            <Stat label="Motion" value={`${t.motion_rate_arcsec_min.toFixed(1)}″/min`} />
-          )}
-        </div>
-        <svg className={`w-5 h-5 text-[var(--text-secondary)] transition-transform shrink-0 ${isExpanded ? "rotate-180" : ""}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {/* Detail panel */}
-      {isExpanded && (
-        <div className="border-t border-gray-700/50 p-5 space-y-5">
-
-          {/* Position + Finder Chart side by side */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Position */}
-            <Section title="Position">
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-[var(--text-secondary)] mb-1">Right Ascension</div>
-                    <div className="font-mono text-lg">{t.ra_deg != null ? degToHMS(t.ra_deg) : "—"}</div>
-                    <div className="text-xs text-[var(--text-secondary)]">{t.ra_deg != null ? `${t.ra_deg.toFixed(5)}°` : ""}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-[var(--text-secondary)] mb-1">Declination</div>
-                    <div className="font-mono text-lg">{t.dec_deg != null ? degToDMS(t.dec_deg) : "—"}</div>
-                    <div className="text-xs text-[var(--text-secondary)]">{t.dec_deg != null ? `${t.dec_deg.toFixed(5)}°` : ""}</div>
-                  </div>
-                </div>
-                {t.predicted_ra_deg != null && t.predicted_dec_deg != null ? (
-                  <div className="bg-[var(--bg-secondary)] rounded-lg p-3 mt-2">
-                    <div className="text-xs text-[var(--accent)] font-semibold mb-2">
-                      Predicted Position (at observation time)
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <div className="font-mono">{degToHMS(t.predicted_ra_deg)}</div>
-                        <div className="text-xs text-[var(--text-secondary)]">{t.predicted_ra_deg.toFixed(5)}°</div>
-                      </div>
-                      <div>
-                        <div className="font-mono">{degToDMS(t.predicted_dec_deg)}</div>
-                        <div className="text-xs text-[var(--text-secondary)]">{t.predicted_dec_deg.toFixed(5)}°</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 mt-2">
-                    <div className="text-xs text-amber-400 font-semibold mb-1">
-                      Ephemeris unavailable
-                    </div>
-                    <div className="text-xs text-amber-300/70">
-                      This object is not yet in JPL Horizons. The position shown is from NEOCP
-                      and may be stale for fast-moving objects. Use caution when pointing &mdash;
-                      check the object&apos;s current position on the{" "}
-                      <a href={`https://www.minorplanetcenter.net/iau/NEO/toconfirm_tabular.html`}
-                        target="_blank" className="underline hover:text-amber-200">NEOCP page</a> or{" "}
-                      <a href={`https://cneos.jpl.nasa.gov/scout/#/object/${t.designation}`}
-                        target="_blank" className="underline hover:text-amber-200">Scout</a> before observing.
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Section>
-
-            {/* Finder Chart */}
-            <Section title="Finder Chart">
-              <div className="bg-[var(--bg-secondary)] rounded-lg overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={finderUrl}
-                  alt={`Finder chart for ${t.designation}`}
-                  className="w-full h-auto"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                    const parent = (e.target as HTMLImageElement).parentElement;
-                    if (parent) {
-                      parent.innerHTML = '<div class="p-8 text-center text-sm text-gray-500">Finder chart unavailable</div>';
-                    }
-                  }}
-                />
-              </div>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">
-                15&apos; FOV &middot; N up, E left &middot; Target at crosshairs
-              </div>
-            </Section>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-white/60 bg-white/5">
+                <tr>
+                  <th className="px-3 py-2 text-left">Designation</th>
+                  <th className="px-3 py-2 text-left">Source</th>
+                  <th className="px-3 py-2 text-left">RA</th>
+                  <th className="px-3 py-2 text-left">Dec</th>
+                  <th className="px-3 py-2 text-right">Mag</th>
+                  <th className="px-3 py-2 text-right">Alt</th>
+                  <th className="px-3 py-2 text-right">Window</th>
+                  <th className="px-3 py-2 text-left">Catalogued</th>
+                  <th className="px-3 py-2 text-left">Observed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {response.targets.map((t) => (
+                  <tr key={t.designation} className="border-t border-white/5 hover:bg-white/5">
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {t.source_url ? (
+                        <a href={t.source_url} target="_blank" rel="noreferrer" className="hover:underline">
+                          {t.designation}
+                        </a>
+                      ) : (
+                        t.designation
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-white/70">{t.source}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{t.ra_deg !== null ? deg2hms(t.ra_deg) : "—"}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{t.dec_deg !== null ? deg2dms(t.dec_deg) : "—"}</td>
+                    <td className="px-3 py-2 text-right">{t.mag_v?.toFixed(1) ?? "—"}</td>
+                    <td className="px-3 py-2 text-right">{t.best_altitude_deg?.toFixed(0) ?? "—"}°</td>
+                    <td className="px-3 py-2 text-right">{t.obs_window_hours?.toFixed(1) ?? "—"} h</td>
+                    <td className="px-3 py-2 text-xs">
+                      {t.catalogued === true ? (
+                        <span className="text-green-400">{t.catalog_match || "yes"}</span>
+                      ) : t.catalogued === false ? (
+                        <span className="text-white/40">no</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-white/60">
+                      {t.observed_at ? new Date(t.observed_at).toISOString().slice(0, 16).replace("T", " ") : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          {/* Motion */}
-          {t.motion_rate_arcsec_min != null && (
-            <Section title="Motion">
-              <div className="flex items-start gap-6">
-                {t.motion_pa_deg != null && (
-                  <DirectionIndicator pa={t.motion_pa_deg} />
-                )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 flex-1">
-                  <DetailStat label="Rate" value={`${t.motion_rate_arcsec_min.toFixed(1)} ″/min`} />
-                  {t.motion_pa_deg != null && (
-                    <DetailStat label="Direction" value={`${t.motion_pa_deg.toFixed(0)}° (${paToDirection(t.motion_pa_deg)})`} />
-                  )}
-                  <DetailStat
-                    label="Max Exposure (no trailing)"
-                    value={t.max_exposure_sec != null ? `${t.max_exposure_sec}s` : (t.motion_rate_arcsec_min > 0 ? `~${Math.round(2.0 / t.motion_rate_arcsec_min * 60)}s` : "—")}
-                    warn={t.max_exposure_sec != null && t.max_exposure_sec < 5}
-                  />
-                </div>
-              </div>
-            </Section>
-          )}
-
-          {/* Observability */}
-          <Section title="Observability">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
-              <DetailStat label="Observable Window"
-                value={t.obs_window_start && t.obs_window_end ? `${formatUTC(t.obs_window_start)} – ${formatUTC(t.obs_window_end)}` : "—"} />
-              <DetailStat label="Duration" value={t.obs_window_hours != null ? `${t.obs_window_hours} hours` : "—"} />
-              <DetailStat label="Transit Time" value={formatUTC(t.transit_time)} />
-              <DetailStat label="Best Altitude" value={t.best_altitude_deg != null ? `${t.best_altitude_deg}°` : "—"} />
-              <DetailStat label="Best Airmass" value={t.best_airmass?.toFixed(2) ?? "—"} />
-              <DetailStat label="Best Azimuth" value={t.best_az_deg != null ? `${t.best_az_deg}°` : "—"} />
-              <DetailStat label="Hour Angle" value={t.best_ha_hours != null ? `${t.best_ha_hours > 0 ? "+" : ""}${t.best_ha_hours.toFixed(2)}h` : "—"} />
-              <DetailStat label="Moon Separation" value={t.moon_sep_deg != null ? `${t.moon_sep_deg}°` : "—"} />
-            </div>
-          </Section>
-
-          {/* Photometry */}
-          <Section title="Photometry">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
-              <DetailStat label="Apparent Magnitude (V)" value={t.mag_v?.toFixed(1) ?? "—"} />
-              <DetailStat label="Absolute Magnitude (H)" value={t.mag_h?.toFixed(1) ?? "—"} />
-              {t.predicted_mag != null && (
-                <DetailStat label="Predicted Mag (at obs time)" value={t.predicted_mag.toFixed(1)} />
-              )}
-            </div>
-          </Section>
-
-          {/* Orbit Status */}
-          <Section title="Orbit Status">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
-              <DetailStat label="Observations" value={String(t.n_obs)} />
-              <DetailStat label="Arc Length" value={`${t.arc_days.toFixed(2)} days`} />
-              <DetailStat label="Last Observed" value={`${t.not_seen_days.toFixed(1)} days ago`} />
-              <DetailStat label="NEO Confidence" value={t.neo_score != null ? `${t.neo_score.toFixed(0)}%` : "—"} />
-              {t.pha_score != null && t.pha_score > 0 && (
-                <DetailStat label="PHA Score" value={`${t.pha_score.toFixed(0)}`} />
-              )}
-              {t.impact_prob != null && (
-                <DetailStat label="Impact Probability" value={t.impact_prob.toExponential(2)} />
-              )}
-            </div>
-          </Section>
-
-          {/* Links */}
-          <div className="flex gap-3 pt-2">
-            {t.source_url && (
-              <a href={t.source_url} target="_blank" className="text-sm text-[var(--accent)] hover:underline">View on MPC →</a>
-            )}
-            <a href={`https://cneos.jpl.nasa.gov/scout/#/object/${t.designation}`} target="_blank" className="text-sm text-[var(--accent)] hover:underline">View on Scout →</a>
-          </div>
-        </div>
+        </section>
       )}
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h4 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">{title}</h4>
-      {children}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-[var(--text-secondary)] text-xs">{label}</div>
-      <div className="font-medium">{value}</div>
-    </div>
-  );
-}
-
-function DetailStat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
-  return (
-    <div>
-      <div className="text-[var(--text-secondary)] text-xs mb-0.5">{label}</div>
-      <div className={`text-sm font-medium ${warn ? "text-amber-400" : ""}`}>{value}</div>
-    </div>
-  );
-}
-
-function DirectionIndicator({ pa }: { pa: number }) {
-  const r = 24;
-  const cx = 28;
-  const cy = 28;
-  const rad = (pa * Math.PI) / 180;
-  // PA measured N through E: N is up (-y), E is right (+x) in screen coords
-  const tipX = cx + r * Math.sin(rad);
-  const tipY = cy - r * Math.cos(rad);
-  const tailX = cx - (r * 0.3) * Math.sin(rad);
-  const tailY = cy + (r * 0.3) * Math.cos(rad);
-  // Arrowhead
-  const headLen = 7;
-  const angle = Math.atan2(tipY - tailY, tipX - tailX);
-  const h1x = tipX - headLen * Math.cos(angle - 0.4);
-  const h1y = tipY - headLen * Math.sin(angle - 0.4);
-  const h2x = tipX - headLen * Math.cos(angle + 0.4);
-  const h2y = tipY - headLen * Math.sin(angle + 0.4);
-
-  return (
-    <div className="flex flex-col items-center gap-1 shrink-0">
-      <svg width="56" height="56" viewBox="0 0 56 56">
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#334155" strokeWidth="1" />
-        <text x={cx} y="8" fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">N</text>
-        <text x={cx} y="54" fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">S</text>
-        <text x="3" y={cy + 2.5} fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">E</text>
-        <text x="53" y={cy + 2.5} fill="#64748b" textAnchor="middle" fontSize="7" fontFamily="monospace">W</text>
-        <line x1={tailX} y1={tailY} x2={tipX} y2={tipY} stroke="#f59e0b" strokeWidth="2" />
-        <polygon points={`${tipX},${tipY} ${h1x},${h1y} ${h2x},${h2y}`} fill="#f59e0b" />
-      </svg>
-      <span className="text-xs text-[var(--text-secondary)]">{pa.toFixed(0)}°</span>
     </div>
   );
 }

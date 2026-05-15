@@ -8,12 +8,11 @@ from typing import Dict, List, Optional
 import requests
 
 from core.target import Target
-from sources.base import SourceAdapter
 
 SENTRY_URL = "https://ssd-api.jpl.nasa.gov/sentry.api"
 
 
-class SentryAdapter(SourceAdapter):
+class SentryAdapter:
     """
     Polls JPL Sentry and returns objects with calculated impact probabilities.
 

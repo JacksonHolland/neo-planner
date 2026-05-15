@@ -8,12 +8,11 @@ from typing import Dict, List, Optional
 import requests
 
 from core.target import Target
-from sources.base import SourceAdapter
 
 SCOUT_URL = "https://ssd-api.jpl.nasa.gov/scout.api"
 
 
-class ScoutAdapter(SourceAdapter):
+class ScoutAdapter:
     """
     Polls JPL Scout and normalizes each object into a Target.
 
