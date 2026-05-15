@@ -28,7 +28,7 @@ function fieldType(f: JSONSchemaField): string {
   if (f.type) return f.type;
   if (f.anyOf) {
     const nonNull = f.anyOf.find((a) => a.type && a.type !== "null");
-    if (nonNull?.type) return `${nonNull.type}?`;
+    if (nonNull?.type) return `${nonNull.type} (nullable)`;
   }
   return "string";
 }
@@ -45,9 +45,9 @@ export default function DocsPage() {
 
   return (
     <div className="space-y-8">
-      <section>
-        <h1 className="text-2xl font-semibold mb-2">API</h1>
-        <ul className="text-sm text-white/70 space-y-1 font-mono">
+      <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4 space-y-2">
+        <h1 className="text-2xl font-semibold text-white">API</h1>
+        <ul className="text-sm text-white/95 space-y-1 font-mono">
           <li>GET /classes</li>
           <li>GET /classes/&#123;name&#125;</li>
           <li>GET /classes/&#123;name&#125;/targets?lat=&amp;lon=&amp;…</li>
@@ -59,36 +59,45 @@ export default function DocsPage() {
         const props = c.filters_schema.properties || {};
         const required = new Set(c.filters_schema.required || []);
         return (
-          <section key={c.name} className="rounded-lg border border-white/10 bg-black/30 p-4 space-y-3">
+          <section
+            key={c.name}
+            className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4 space-y-3"
+          >
             <header>
-              <h2 className="text-xl font-semibold">{c.label}</h2>
-              <p className="text-xs text-white/50">
-                <code>{c.name}</code> · canonical catalog: {c.canonical_catalog} · sources: {c.sources.join(", ")}
+              <h2 className="text-xl font-semibold text-white">{c.label}</h2>
+              <p className="text-xs text-white/80 mt-1">
+                <code className="text-white">{c.name}</code>
+                <span className="mx-2 text-white/40">|</span>
+                canonical catalog: <span className="text-white">{c.canonical_catalog}</span>
+                <span className="mx-2 text-white/40">|</span>
+                sources: <span className="text-white">{c.sources.join(", ")}</span>
               </p>
             </header>
-            <p className="text-sm text-white/80">{c.description}</p>
+            <p className="text-sm text-white/90">{c.description}</p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-white/60">
+                <thead className="text-white bg-white/10">
                   <tr>
-                    <th className="text-left px-2 py-1">Filter</th>
-                    <th className="text-left px-2 py-1">Type</th>
-                    <th className="text-left px-2 py-1">Default</th>
-                    <th className="text-left px-2 py-1">Description</th>
+                    <th className="text-left px-2 py-1.5">Field</th>
+                    <th className="text-left px-2 py-1.5">Query param</th>
+                    <th className="text-left px-2 py-1.5">Type</th>
+                    <th className="text-left px-2 py-1.5">Default</th>
+                    <th className="text-left px-2 py-1.5">Description</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.entries(props).map(([k, f]) => (
-                    <tr key={k} className="border-t border-white/5">
-                      <td className="px-2 py-1 font-mono">
-                        {k}
-                        {required.has(k) && <span className="text-red-400"> *</span>}
+                    <tr key={k} className="border-t border-white/10 text-white/95">
+                      <td className="px-2 py-1.5">
+                        {f.title || k}
+                        {required.has(k) && <span className="text-red-400" aria-label="required"> *</span>}
                       </td>
-                      <td className="px-2 py-1 font-mono text-white/70">{fieldType(f)}</td>
-                      <td className="px-2 py-1 font-mono text-white/70">
+                      <td className="px-2 py-1.5 font-mono">{k}</td>
+                      <td className="px-2 py-1.5 font-mono">{fieldType(f)}</td>
+                      <td className="px-2 py-1.5 font-mono">
                         {f.default !== undefined && f.default !== null ? String(f.default) : "—"}
                       </td>
-                      <td className="px-2 py-1 text-white/70">{f.description || ""}</td>
+                      <td className="px-2 py-1.5">{f.description || ""}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -71,33 +71,30 @@ function fieldUnderlyingType(f: JSONSchemaField): string {
 }
 
 function inputForField(
-  fieldName: string,
   field: JSONSchemaField,
   value: string,
   onChange: (v: string) => void,
 ) {
   const type = fieldUnderlyingType(field);
+  const cls =
+    "w-full bg-black/70 border border-white/30 focus:border-white/60 focus:outline-none rounded px-2 py-1.5 text-sm text-white placeholder-white/40";
   if (type === "boolean") {
     return (
-      <select
-        className="w-full bg-black/40 border border-white/15 rounded px-2 py-1.5 text-sm"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
+      <select className={cls} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">any</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
+        <option value="true">yes</option>
+        <option value="false">no</option>
       </select>
     );
   }
   return (
     <input
-      className="w-full bg-black/40 border border-white/15 rounded px-2 py-1.5 text-sm"
+      className={cls}
       type={type === "integer" || type === "number" ? "number" : "text"}
       step={type === "number" ? "any" : undefined}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder={field.default !== undefined ? String(field.default) : ""}
+      placeholder={field.default !== undefined && field.default !== null ? String(field.default) : ""}
     />
   );
 }
@@ -184,10 +181,13 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-wrap items-center gap-3">
-        <label className="text-sm text-white/70">Class</label>
+      <section className="flex flex-wrap items-center gap-3 rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm px-4 py-3">
+        <label htmlFor="class-select" className="text-sm font-medium text-white">
+          Target class
+        </label>
         <select
-          className="bg-black/40 border border-white/15 rounded px-3 py-2 text-sm"
+          id="class-select"
+          className="bg-black/80 border border-white/30 focus:border-white/60 focus:outline-none rounded px-3 py-1.5 text-sm text-white"
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
         >
@@ -198,47 +198,52 @@ export default function HomePage() {
           ))}
         </select>
         {currentClass && (
-          <span className="text-xs text-white/50">
-            canonical: {currentClass.canonical_catalog} · sources: {currentClass.sources.join(", ")}
+          <span className="text-xs text-white/80">
+            canonical catalog: <span className="text-white">{currentClass.canonical_catalog}</span>
+            <span className="mx-2 text-white/40">|</span>
+            sources: <span className="text-white">{currentClass.sources.join(", ")}</span>
           </span>
         )}
       </section>
 
       {currentClass && (
-        <section className="rounded-lg border border-white/10 bg-black/30 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm p-4">
+          <p className="text-sm text-white/90 mb-4">{currentClass.description}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Object.entries(props).map(([k, f]) => (
-              <label key={k} className="text-xs text-white/70 flex flex-col gap-1">
-                <span className="flex items-center gap-1">
-                  {k}
-                  {required.has(k) && <span className="text-red-400">*</span>}
+              <label key={k} className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-white flex items-center gap-1">
+                  {f.title || k}
+                  {required.has(k) && <span className="text-red-400" aria-label="required">*</span>}
                 </span>
-                {inputForField(k, f, values[k] ?? "", (v) => setValues({ ...values, [k]: v }))}
-                {f.description && <span className="text-[10px] text-white/40">{f.description}</span>}
+                {inputForField(f, values[k] ?? "", (v) => setValues({ ...values, [k]: v }))}
+                {f.description && (
+                  <span className="text-xs text-white/75 leading-snug">{f.description}</span>
+                )}
               </label>
             ))}
           </div>
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-5 flex items-center gap-3">
             <button
               onClick={submit}
               disabled={loading}
-              className="px-4 py-2 rounded bg-white text-black text-sm font-medium disabled:opacity-50"
+              className="px-4 py-2 rounded bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-white/60"
             >
               {loading ? "Loading…" : "Find targets"}
             </button>
-            {error && <span className="text-sm text-red-400">{error}</span>}
+            {error && <span className="text-sm text-red-300" role="alert">{error}</span>}
           </div>
         </section>
       )}
 
       {response && (
-        <section className="rounded-lg border border-white/10 bg-black/30 overflow-hidden">
-          <div className="px-4 py-2 text-sm text-white/70 border-b border-white/10">
+        <section className="rounded-lg border border-white/15 bg-black/70 backdrop-blur-sm overflow-hidden">
+          <div className="px-4 py-2 text-sm text-white border-b border-white/15 bg-white/5">
             {response.total} target{response.total === 1 ? "" : "s"}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-xs text-white/60 bg-white/5">
+              <thead className="text-xs text-white bg-white/10">
                 <tr>
                   <th className="px-3 py-2 text-left">Designation</th>
                   <th className="px-3 py-2 text-left">Source</th>
@@ -248,22 +253,27 @@ export default function HomePage() {
                   <th className="px-3 py-2 text-right">Alt</th>
                   <th className="px-3 py-2 text-right">Window</th>
                   <th className="px-3 py-2 text-left">Catalogued</th>
-                  <th className="px-3 py-2 text-left">Observed</th>
+                  <th className="px-3 py-2 text-left">Observed (UTC)</th>
                 </tr>
               </thead>
               <tbody>
                 {response.targets.map((t) => (
-                  <tr key={t.designation} className="border-t border-white/5 hover:bg-white/5">
+                  <tr key={t.designation} className="border-t border-white/10 hover:bg-white/10 text-white/95">
                     <td className="px-3 py-2 font-mono text-xs">
                       {t.source_url ? (
-                        <a href={t.source_url} target="_blank" rel="noreferrer" className="hover:underline">
+                        <a
+                          href={t.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline decoration-white/40 hover:decoration-white"
+                        >
                           {t.designation}
                         </a>
                       ) : (
                         t.designation
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-white/70">{t.source}</td>
+                    <td className="px-3 py-2 text-xs">{t.source}</td>
                     <td className="px-3 py-2 font-mono text-xs">{t.ra_deg !== null ? deg2hms(t.ra_deg) : "—"}</td>
                     <td className="px-3 py-2 font-mono text-xs">{t.dec_deg !== null ? deg2dms(t.dec_deg) : "—"}</td>
                     <td className="px-3 py-2 text-right">{t.mag_v?.toFixed(1) ?? "—"}</td>
@@ -271,14 +281,14 @@ export default function HomePage() {
                     <td className="px-3 py-2 text-right">{t.obs_window_hours?.toFixed(1) ?? "—"} h</td>
                     <td className="px-3 py-2 text-xs">
                       {t.catalogued === true ? (
-                        <span className="text-green-400">{t.catalog_match || "yes"}</span>
+                        <span className="text-green-300">{t.catalog_match || "yes"}</span>
                       ) : t.catalogued === false ? (
-                        <span className="text-white/40">no</span>
+                        <span className="text-white/70">no</span>
                       ) : (
                         "—"
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-white/60">
+                    <td className="px-3 py-2 text-xs">
                       {t.observed_at ? new Date(t.observed_at).toISOString().slice(0, 16).replace("T", " ") : "—"}
                     </td>
                   </tr>

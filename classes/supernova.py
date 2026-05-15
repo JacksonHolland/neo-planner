@@ -30,23 +30,35 @@ from sources.fink_ztf import start_fink_ztf_consumer
 class SupernovaFilters(BaseModel):
     """Query params for ``GET /classes/supernova/targets``."""
 
-    lat: float = Field(..., ge=-90, le=90)
-    lon: float = Field(..., ge=-180, le=180)
-    alt_m: float = Field(0, ge=-500, le=10000)
-    limiting_mag: float = Field(19.0, ge=5, le=30)
-    min_altitude_deg: float = Field(20.0, ge=0, le=89)
-    min_moon_sep_deg: float = Field(30.0, ge=0, le=180)
-    min_ha_hours: float = Field(-6.0, ge=-12, le=12)
-    max_ha_hours: float = Field(6.0, ge=-12, le=12)
-    min_az_deg: float = Field(0.0, ge=0, le=360)
-    max_az_deg: float = Field(360.0, ge=0, le=360)
-    plate_scale_arcsec: float = Field(2.0, gt=0)
-    seeing_arcsec: float = Field(2.5, gt=0)
-    max_trail_arcsec: float = Field(2.5, gt=0)
+    lat: float = Field(..., ge=-90, le=90, title="Latitude (deg)",
+                       description="Observer latitude, north positive")
+    lon: float = Field(..., ge=-180, le=180, title="Longitude (deg)",
+                       description="Observer longitude, east positive")
+    alt_m: float = Field(0, ge=-500, le=10000, title="Altitude (m)",
+                        description="Height above sea level")
+    limiting_mag: float = Field(19.0, ge=5, le=30, title="Limiting magnitude",
+                               description="Faintest detectable apparent magnitude")
+    min_altitude_deg: float = Field(20.0, ge=0, le=89, title="Min altitude (deg)",
+                                    description="Lowest acceptable altitude above the horizon")
+    min_moon_sep_deg: float = Field(30.0, ge=0, le=180, title="Min Moon separation (deg)",
+                                    description="Minimum angular separation from the Moon")
+    min_ha_hours: float = Field(-6.0, ge=-12, le=12, title="Min hour angle (h)")
+    max_ha_hours: float = Field(6.0, ge=-12, le=12, title="Max hour angle (h)")
+    min_az_deg: float = Field(0.0, ge=0, le=360, title="Min azimuth (deg)")
+    max_az_deg: float = Field(360.0, ge=0, le=360, title="Max azimuth (deg)")
+    plate_scale_arcsec: float = Field(2.0, gt=0, title="Plate scale (arcsec/pix)")
+    seeing_arcsec: float = Field(2.5, gt=0, title="Seeing FWHM (arcsec)")
+    max_trail_arcsec: float = Field(2.5, gt=0, title="Max trail (arcsec)")
 
-    catalogued: Optional[bool] = Field(None, description="Filter to TNS-catalogued or non-TNS candidates")
-    max_age_hours: float = Field(168.0, ge=0, description="Drop candidates older than this (default 7 days)")
-    n_targets: int = Field(20, ge=1, le=500)
+    catalogued: Optional[bool] = Field(
+        None, title="In TNS catalog",
+        description="True: only TNS-classified candidates. False: only un-classified candidates.",
+    )
+    max_age_hours: float = Field(
+        168.0, ge=0, title="Max age (hours)",
+        description="Drop candidates older than this (default = 7 days)",
+    )
+    n_targets: int = Field(20, ge=1, le=500, title="Number of targets")
 
 
 # ── Cache ─────────────────────────────────────────────────────────────

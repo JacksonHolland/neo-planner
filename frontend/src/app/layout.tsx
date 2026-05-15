@@ -27,12 +27,12 @@ export default function RootLayout({
             repulsionStrength={1}
           />
         </div>
-        <nav className="border-b border-white/10 bg-black/40 backdrop-blur">
+        <nav className="border-b border-white/15 bg-black/70 backdrop-blur">
           <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="font-semibold tracking-wide">
+            <Link href="/" className="font-semibold tracking-wide text-white">
               Targets
             </Link>
-            <div className="flex items-center gap-6 text-sm text-white/70">
+            <div className="flex items-center gap-6 text-sm text-white/85">
               <Link href="/" className="hover:text-white transition-colors">
                 Find
               </Link>
