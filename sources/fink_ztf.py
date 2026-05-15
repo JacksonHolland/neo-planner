@@ -46,7 +46,10 @@ def _run(
         return
 
     server = os.getenv("FINK_ZTF_SERVER", "kafka-ztf.fink-broker.org:24499")
-    group_id = os.getenv("FINK_ZTF_GROUP_ID", os.getenv("FINK_GROUP_ID", "jackson_mit"))
+    # Each consumer gets a unique group id so multiple class threads on the same
+    # Kafka cluster don't collide on partition assignment.
+    base_group = os.getenv("FINK_ZTF_GROUP_ID", os.getenv("FINK_GROUP_ID", "jackson_mit"))
+    group_id = f"{base_group}__{name}"
     timeout = int(os.getenv("FINK_POLL_TIMEOUT", "10"))
 
     try:
